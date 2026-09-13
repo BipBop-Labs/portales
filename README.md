@@ -43,6 +43,7 @@ real portal
 - Observe the real browser flow before replaying any request.
 - Authentication and mutations are never retried automatically.
 - JSON is the default machine interface. Human formatting is optional presentation.
+- Every portal-defined selector has a CLI `options` command, so agents can discover valid IDs and labels instead of guessing.
 - Shared abstractions are extracted only after a second real service proves the common shape.
 
 ## Documentation

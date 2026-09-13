@@ -74,7 +74,8 @@ Build in this order:
 1. boundary schema and typed result;
 2. portal adapter against sanitized fixtures/fakes;
 3. task policy and typed errors;
-4. CLI command and JSON contract.
+4. CLI `options` commands for every portal-defined selector;
+5. operation command and JSON contract.
 
 The CLI command calls the task and nothing below it.
 
@@ -103,6 +104,8 @@ A short decision note is needed only for a cross-cutting, surprising, security-s
 - [ ] Public task contains no portal or secret details
 - [ ] JSON result is stable and curated
 - [ ] CLI emits result once on STDOUT
+- [ ] Every selector, location, account, and constrained field has an `options` command that returns the complete valid set
+- [ ] Dependent option lists expose and require their parent filters
 - [ ] Auth and writes are never retried automatically
 - [ ] Fixtures are synthetic and sanitized
 - [ ] Portal-change and account-block behavior stop safely

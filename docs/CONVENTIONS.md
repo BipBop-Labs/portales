@@ -73,6 +73,52 @@ Suggested exit codes:
 
 Do not use an exit code to claim a write succeeded. Verify live state first.
 
+## Portal-defined options
+
+An agent must never guess the accepted value for a select, radio group, autocomplete, location, account, document type, transport type, or other portal-defined choice. Every constrained task input has a corresponding read-only CLI discovery command:
+
+```text
+portales <service> <resource> options
+portales <service> <resource> options <field> [parent filters]
+```
+
+With no field, `options` returns every selector catalog required by the resource. With a field, it returns all currently valid values for that selector. Dependent selectors accept their parent selection as a filter. For example:
+
+```text
+portales sag declaracion-jurada options
+portales sag declaracion-jurada options border-control --entry-mode air
+```
+
+The JSON result uses canonical machine IDs separately from human labels:
+
+```json
+{
+  "field": "border-control",
+  "dependsOn": { "entryMode": "air" },
+  "options": [
+    {
+      "id": "synthetic-location-id",
+      "label": "Synthetic Airport",
+      "aliases": []
+    }
+  ]
+}
+```
+
+The example above is intentionally synthetic and is not a portal fixture.
+
+Rules:
+
+- Return the complete valid set, not a hand-picked subset.
+- Prefer live portal data when the list is dynamic. If values are packaged, document first-hand evidence that they are stable and expose the observation date.
+- Preserve portal-native IDs as strings even when they look numeric. Labels are display data, not identifiers.
+- Include parent dependencies explicitly. Never flatten incompatible child values into one ambiguous list.
+- Use the same task and parser for discovery and later validation so the two cannot drift.
+- Reject unknown IDs locally before submission and point the error to the exact `options` command that resolves it.
+- `--help` names the discovery command beside every constrained argument.
+- Option discovery is read-only, JSON by default, contains no PII, and follows the normal authentication and pacing rules.
+- Tests prove that every constrained field has discovery coverage and that the command returns all synthetic fixture options.
+
 ## Errors
 
 Use a small cross-service set where semantics are shared:

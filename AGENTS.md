@@ -21,6 +21,7 @@ For design work, use the `ousterhout-software-design` skill from [`BipBop-Labs/b
 - Read credentials only through the shared OS-keyring seam. No public task, CLI argument, environment variable, config file, log, or fixture may carry a password, PIN, token, or one-time code.
 - Tasks do not log in as a side effect. Authentication is an explicit operation.
 - The CLI calls service tasks only. It does not import portal modules or reproduce guardrails.
+- Every portal-defined selector must be discoverable through an explicit CLI `options` command. Never require an agent to guess a value, scrape `--help`, or know a portal label in advance.
 - Keep STDOUT machine-readable. Diagnostics belong on STDERR.
 - Treat writes as previewable when possible. Irreversible actions require explicit, operation-specific confirmation and live post-write verification.
 - Tests never touch a production portal or the real keyring by default.
@@ -61,6 +62,7 @@ A portal operation is not complete until:
 - its observed flow and contract are dated and documented;
 - its task is tested with fakes or sanitized fixtures;
 - CLI JSON behavior is tested;
+- every constrained input is backed by a tested CLI discovery command that lists all currently valid options and dependencies;
 - authentication, rate-limit, portal-change, and effect-specific failure paths are covered;
 - the supported public command was exercised;
 - any live validation was explicitly enabled, minimal, and verified against portal state.

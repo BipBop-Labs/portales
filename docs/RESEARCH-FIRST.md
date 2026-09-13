@@ -35,6 +35,7 @@ Capture only the evidence needed:
 - start and final URL, including redirect hosts;
 - page title and visible identity/account context;
 - load-bearing controls and their real element types;
+- the complete option set for each selector and the parent fields that change it;
 - observable readiness condition;
 - request/response for the single operation;
 - popup, iframe, download, or client-side validation behavior;
@@ -58,6 +59,8 @@ Create `services/<service>/docs/contracts/<operation>.md` with:
 - sanitized fixture provenance.
 
 Distinguish observed facts from hypotheses. Cite the page, script, or network event that proves each fragile fact.
+
+For selectors, record where the complete list comes from and whether it is static, loaded after a parent choice, or fetched from a request. The implementation must expose that list through the CLI rather than forcing agents to repeat browser research.
 
 ### 5. Choose browser driving or request replay
 
