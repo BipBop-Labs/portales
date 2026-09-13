@@ -73,7 +73,7 @@ Keep the smallest response fragment that exercises parsing, then construct a new
 
 ### 7. Implement one operation
 
-Implement through the public task boundary, then add the CLI surface. Add MCP only as a thin mapping to the same task. Test against fakes or sanitized fixtures before any further live call.
+Implement through the public task boundary, then add the CLI command. Test against fakes or sanitized fixtures before any further live call.
 
 ### 8. Validate minimally
 

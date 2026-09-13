@@ -18,15 +18,27 @@ For design work, use the `ousterhout-software-design` skill from [`BipBop-Labs/b
 - Navigate first. Observe the exact operation in a real browser before implementing selectors or request replay.
 - Never guess, enumerate, fuzz, or brute-force private endpoints, form fields, selectors, tokens, or identifiers.
 - Never automatically retry authentication, CAPTCHA, authorization failures, account blocks, rate limits, or mutations.
-- Read credentials only through the shared OS-keyring seam. No public task, CLI argument, environment variable, config file, log, fixture, or MCP schema may carry a password, PIN, token, or one-time code.
+- Read credentials only through the shared OS-keyring seam. No public task, CLI argument, environment variable, config file, log, or fixture may carry a password, PIN, token, or one-time code.
 - Tasks do not log in as a side effect. Authentication is an explicit operation.
-- CLI and MCP call service tasks only. They do not import portal modules or reproduce guardrails.
+- The CLI calls service tasks only. It does not import portal modules or reproduce guardrails.
 - Keep STDOUT machine-readable. Diagnostics belong on STDERR.
 - Treat writes as previewable when possible. Irreversible actions require explicit, operation-specific confirmation and live post-write verification.
 - Tests never touch a production portal or the real keyring by default.
 - Never copy data supplied by a user, a live portal, chat, email, document, screenshot, or local account into this repository. This includes examples, fixtures, snapshots, traces, issues, comments, and commit messages.
-- Use synthetic data in committed fixtures. Remove cookies, RUTs, account numbers, names, emails, amounts, document contents, and hidden fields that can identify an account.
+- Create examples and fixtures from scratch with obviously synthetic identities and values. Never make a fixture by partially masking live data. Remove cookies, RUTs, account numbers, names, addresses, client names, emails, phone numbers, amounts, document contents, and hidden fields that can identify an account.
 - If the portal behaves differently from the recorded contract, stop with a `PORTAL_CHANGED` error. Do not add retries.
+
+## Mandatory public-repository gate
+
+Before every commit and again before every push:
+
+1. Inspect every staged filename and the complete staged diff.
+2. Search staged content for emails, RUTs, phone numbers, addresses, personal and client names, account/card numbers, credentials, cookies, tokens, balances, transaction descriptions, and document text.
+3. Confirm examples and fixtures were authored as synthetic data rather than derived from a live source.
+4. Confirm screenshots, HAR files, browser traces, downloads, session files, and copied portal payloads are absent.
+5. If any value's provenance is uncertain, remove it. Do not push first and clean history later.
+
+Completion means the staged tree contains no user, client, or live-account data and this has been checked after the final edit.
 
 ## Design discipline
 
@@ -49,7 +61,6 @@ A portal operation is not complete until:
 - its observed flow and contract are dated and documented;
 - its task is tested with fakes or sanitized fixtures;
 - CLI JSON behavior is tested;
-- MCP mapping is tested if MCP is exposed;
 - authentication, rate-limit, portal-change, and effect-specific failure paths are covered;
 - the supported public command was exercised;
 - any live validation was explicitly enabled, minimal, and verified against portal state.

@@ -1,14 +1,14 @@
 # Security and account safety
 
-These tools handle tax, identity, travel, and banking data. Preventing credential exposure, account blocks, and unintended remote changes is part of correctness.
+This is a public repository for tools that handle tax, identity, travel, and banking data. Preventing PII exposure, credential exposure, account blocks, and unintended remote changes is part of correctness.
 
 ## Credentials
 
 - The OS keyring is the only credential store.
 - Use service `cl.bipbop.portales.<service>` and a user-selected profile account name.
 - Capture credentials only through an interactive CLI command with hidden input and store them directly in the keyring.
-- Ordinary tasks and MCP runtimes receive a read-only `SecretReader`.
-- Never accept secrets through command arguments, environment variables, stdin pipes, config files, source code, logs, telemetry, fixtures, issue text, or MCP inputs.
+- Ordinary task runtimes receive a read-only `SecretReader`.
+- Never accept secrets through command arguments, environment variables, stdin pipes, config files, source code, logs, telemetry, fixtures, or issue text.
 - Never print whether a particular secret field exists beyond a generic “credentials configured/not configured” status.
 - Fetch a keyring entry only after non-secret inputs and any warm-session check pass. Do not trigger needless unlock prompts.
 - Keep a secret in memory only for the single authentication attempt. Do not cache it in application state.
@@ -36,7 +36,7 @@ Treat cookies, CSRF tokens, device identifiers, and browser storage as secrets e
 
 Curate outputs to the fields needed by the operation. Prefer dropping an unbounded raw payload over maintaining an incomplete PII denylist.
 
-Data received from any user, chat, email, local file, screenshot, document, browser session, or live account must never be used as repository content, even after partial redaction. Do not copy it into examples, fixtures, snapshots, traces, tests, documentation, issues, comments, or commit messages. Build examples from obviously synthetic values created for the test case.
+Data received from any user, client, chat, email, local file, screenshot, document, browser session, or live account must never be used as repository content, even after partial redaction. Do not copy it into examples, fixtures, snapshots, traces, tests, documentation, issues, comments, or commit messages. Build examples from obviously synthetic identities and values created from scratch for the test case.
 
 Never place credentials, session material, full identity data, account numbers, balances, transaction descriptions, document bodies, or free text in audit logs. Service docs must identify which result fields are sensitive and whether exposing them to an agent is necessary.
 

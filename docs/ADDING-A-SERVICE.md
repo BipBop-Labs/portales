@@ -67,17 +67,16 @@ Reuse the existing browser, keyring, session, clock, audit, and file seams. Add 
 
 Do not extract shared portal behavior from one service. If this is the second use, compare both implementations and extract only shared knowledge with a smaller interface.
 
-## 6. Implement task first, surfaces second
+## 6. Implement the task first, then its CLI command
 
 Build in this order:
 
 1. boundary schema and typed result;
 2. portal adapter against sanitized fixtures/fakes;
 3. task policy and typed errors;
-4. CLI command and JSON contract;
-5. MCP mapping only if useful.
+4. CLI command and JSON contract.
 
-Surfaces call the task and nothing below it.
+The CLI command calls the task and nothing below it.
 
 ## 7. Test failure paths
 
@@ -104,7 +103,6 @@ A short decision note is needed only for a cross-cutting, surprising, security-s
 - [ ] Public task contains no portal or secret details
 - [ ] JSON result is stable and curated
 - [ ] CLI emits result once on STDOUT
-- [ ] MCP is a thin mapping, if present
 - [ ] Auth and writes are never retried automatically
 - [ ] Fixtures are synthetic and sanitized
 - [ ] Portal-change and account-block behavior stop safely

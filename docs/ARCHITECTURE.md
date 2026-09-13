@@ -7,17 +7,16 @@ Make every portal operation easy for an agent to discover and hard to misuse. Th
 ## Boundaries
 
 ```text
-apps/cli ─┐
-          ├──▶ service tasks ──▶ service portal code ──▶ runtime seams ──▶ portal
-apps/mcp ─┘          │                    │                    │
-                     └── policy           └── observed facts   └── adapters
+apps/cli ──▶ service tasks ──▶ service portal code ──▶ runtime seams ──▶ portal
+                   │                    │                    │
+                   └── policy           └── observed facts   └── adapters
 ```
 
-### Surfaces
+### CLI surface
 
-The CLI and MCP server translate inputs, call exactly one task, and present its result. They do not navigate, parse HTML, read the keyring, restore sessions, pace calls, audit operations, or decide whether a write is safe.
+The CLI translates inputs, calls exactly one task, and presents its result. It does not navigate, parse HTML, read the keyring, restore sessions, pace calls, audit operations, or decide whether a write is safe.
 
-The CLI is the baseline interface because humans and agents can both invoke it and inspect its exact output. MCP is a one-to-one mapping for operations that benefit from discovery or tool annotations. MCP must not become a second implementation.
+The CLI is the only maintained public interface because humans and agents can both invoke it, compose it with ordinary tools, and inspect its exact input, output, and exit status. Do not add parallel protocol adapters or duplicate command behavior in another surface.
 
 ### Service tasks
 
@@ -51,19 +50,19 @@ A portal module may use browser navigation or replay an observed request within 
 - `AuditSink` for redacted receipts
 - `FileSink` for verified downloads
 
-Secret creation belongs to a dedicated interactive CLI setup path with hidden input. The ordinary runtime and MCP composition roots receive only a read capability. This makes secret writes unavailable by construction.
+Secret creation belongs to a dedicated interactive CLI setup path with hidden input. The ordinary command runtime receives only a read capability. This makes secret writes unavailable by construction.
 
 Add a new seam only when it hides a volatile dependency or makes a load-bearing rule testable. Do not build a framework around hypothetical providers.
 
 ## Future repository shape
 
 ```text
-apps/{cli,mcp}
+apps/cli
 packages/runtime
 services/<service>/{docs,src/tasks,src/portal,test/fixtures}
 ```
 
-A service owns its tasks, portal code, contracts, and fixtures. Central surfaces add one registration line per service. Avoid central switch statements containing service behavior.
+A service owns its tasks, portal code, contracts, and fixtures. The central CLI adds one registration line per service. Avoid central switch statements containing service behavior.
 
 Do not create generic `BaseScraper`, `BasePortal`, repository, manager, or controller classes. These names usually hide shallow modules. Extract shared code only after two implemented services reveal the same knowledge and the resulting interface is substantially simpler than both implementations.
 
@@ -93,13 +92,13 @@ Every operation declares one effect:
 - `write`: changes reversible or replaceable state;
 - `destructive`: creates an irreversible, financial, legal, or deletion effect.
 
-This metadata drives CLI help, MCP annotations, confirmation requirements, audit behavior, and tests. It is descriptive policy attached to the task, not duplicated by each surface.
+This metadata drives CLI help, confirmation requirements, audit behavior, and tests. It is descriptive policy attached to the task, not duplicated by commands.
 
 A destructive task must expose a preview or summary whenever the portal permits it, require an explicit confirmation value tied to the proposed action, execute once, and query live state before reporting success.
 
 ## Files and large results
 
-Documents and exports are written through `FileSink`. A task returns a descriptor such as path, media type, byte count, checksum, and business identifiers. It never places document bytes or base64 in JSON or MCP text.
+Documents and exports are written through `FileSink`. A task returns a descriptor such as path, media type, byte count, checksum, and business identifiers. It never places document bytes or base64 in JSON output.
 
 Validate downloads using declared content type, file signature, and expected document content. HTTP 200 alone is not proof of success.
 
@@ -108,17 +107,17 @@ Validate downloads using declared content type, file signature, and expected doc
 Allowed:
 
 ```text
-surface -> task -> portal -> runtime interfaces
+CLI -> task -> portal -> runtime interfaces
 runtime adapters -> runtime interfaces
 ```
 
 Forbidden:
 
 ```text
-surface -> portal
-surface -> keyring
-portal -> surface
-task -> CLI or MCP
+CLI -> portal
+CLI -> keyring
+portal -> CLI
+task -> CLI
 service A -> service B portal internals
 ```
 

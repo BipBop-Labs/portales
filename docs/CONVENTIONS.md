@@ -26,11 +26,11 @@ errors: small typed set
 
 The exact TypeScript shape should be introduced with the first implementation, not guessed in advance.
 
-Task inputs contain user intent and non-secret identifiers. They never contain credentials, cookies, tokens, browser handles, output streams, or surface-specific flags.
+Task inputs contain user intent and non-secret identifiers. They never contain credentials, cookies, tokens, browser handles, output streams, or CLI presentation flags.
 
 Task results use stable domain names and ISO 8601 strings for dates/times. Monetary amounts use integer minor units plus currency unless the provider's domain requires a more precise representation. Never use binary floating point for money.
 
-Do not return an `ok` boolean around successful data merely because errors exist. Success is the returned value; failure is a typed error. Surfaces may wrap failures for transport.
+Do not return an `ok` boolean around successful data merely because errors exist. Success is the returned value; failure is a typed error. The CLI may wrap failures in its stable error shape.
 
 ## CLI
 
@@ -73,16 +73,6 @@ Suggested exit codes:
 
 Do not use an exit code to claim a write succeeded. Verify live state first.
 
-## MCP
-
-MCP tools map one-to-one to tasks and return the same JSON data. Their names begin with the service slug, for example `bci_pyme_movements_list`.
-
-- Apply `readOnlyHint`, `destructiveHint`, and other protocol annotations from the task effect.
-- Descriptions state account scope, side effects, and PII exposure plainly.
-- No tool accepts a credential, cookie, token, PIN, one-time code, or keyring payload.
-- A tool may request login by profile but the runtime reads the keyring outside model context.
-- Never place downloaded document bytes or full sensitive raw payloads in MCP text.
-
 ## Errors
 
 Use a small cross-service set where semantics are shared:
@@ -122,7 +112,6 @@ Configuration is not a substitute for design. Expose a rate or timeout only if o
 - Default tests never open a browser, network connection, keyring, or production session.
 - Test every public result and typed error at the task boundary.
 - Test CLI STDOUT, STDERR, and exit codes.
-- Test MCP schemas and annotations when MCP is exposed.
 - Live tests are separate, opt-in, serialized, minimal, and read-only unless a real required operation has explicit authorization.
 - A parser test includes at least: normal data, empty data, provider error, login-wall response, and changed shape.
 
