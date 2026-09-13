@@ -1,0 +1,39 @@
+# Credentials and local configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.mobileprovision
+
+# Browser and authenticated session material
+.auth/
+.sessions/
+sessions/
+browser-data/
+playwright/.auth/
+*.har
+*.trace
+trace.zip
+
+# Captures and downloaded account data
+screenshots/
+artifacts/
+downloads/
+*.pdf
+*.csv
+*.xlsx
+*.zip
+
+# JavaScript and TypeScript
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Editors and operating systems
+.DS_Store
+.idea/
+.vscode/
