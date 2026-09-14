@@ -13,6 +13,5 @@
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true
   },
-  "include": ["apps/**/*.ts", "packages/**/*.ts", "services/**/*.ts"],
-  "exclude": ["services/sii/**"]
+  "include": ["apps/**/*.ts", "packages/**/*.ts", "services/**/*.ts"]
 }

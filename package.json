@@ -8,17 +8,12 @@
   "workspaces": [
     "apps/*",
     "packages/*",
-    "services/*",
-    "!services/sii"
+    "services/*"
   ],
   "scripts": {
-    "build": "npm run build:sii && tsc -b",
-    "build:sii": "services/sii/node_modules/.bin/tsc -b services/sii/tsconfig.json",
-    "setup:sii": "git submodule update --init --recursive && corepack pnpm@10.33.2 -C services/sii install --frozen-lockfile",
+    "build": "tsc -b",
     "lint": "eslint .",
-    "lint:sii": "cd services/sii && ./node_modules/.bin/eslint packages",
-    "test": "vitest run --exclude 'dist/**' --exclude 'services/sii/**'",
-    "test:sii": "cd services/sii && ./node_modules/.bin/vitest run",
+    "test": "vitest run --exclude 'dist/**'",
     "typecheck": "tsc -b --pretty false"
   },
   "devDependencies": {
@@ -31,6 +26,7 @@
   },
   "dependencies": {
     "jszip": "^3.10.1",
-    "playwright": "^1.55.0"
+    "playwright": "^1.55.0",
+    "zod": "^4.4.3"
   }
 }

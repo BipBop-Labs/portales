@@ -1,28 +1,15 @@
-import { existsSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
 import { SecretServiceError, type SecretReader } from '../../../packages/runtime/src/secret-service.js';
 import { PortalError } from '../../../services/bci-pyme/src/errors.js';
+import { keyringLogin } from '../../../services/sii/src/tasks/auth.js';
+import { createPortalesSiiRuntime } from '../../../services/sii/src/runtime.js';
+import type { Runtime, SecretReader as SiiSecretReader } from '../../../services/sii/src/seams/index.js';
 
 const SII_KEYRING_SERVICE = 'cl.bipbop.portales.sii';
 
-interface SiiSecretStore {
-  get(account: string): Promise<string | null>;
-}
-
-interface SiiRuntime {
-  secrets: SiiSecretStore;
-  [key: string]: unknown;
-}
-
-interface SiiCore {
-  createNodeRuntime(overrides: { secrets: SiiSecretStore }): SiiRuntime;
-  keyringLogin(runtime: SiiRuntime, input: { rut: string }): Promise<unknown>;
-}
-
 interface SiiAuthDependencies {
   secrets: SecretReader;
-  loadCore?: () => Promise<SiiCore>;
+  createRuntime?: (profile: string, overrides: Partial<Runtime>) => Runtime;
+  login?: typeof keyringLogin;
 }
 
 interface SiiCredentialBundle {
@@ -53,30 +40,6 @@ function normalizeRut(value: string): string {
   return value.replace(/[.\s]/gu, '').toUpperCase();
 }
 
-function siiDistRoot(): string {
-  const here = dirname(fileURLToPath(import.meta.url));
-  const candidates = [
-    resolve(here, '../../../../services/sii/packages/core/dist'),
-    resolve(here, '../../../services/sii/packages/core/dist'),
-  ];
-  const root = candidates.find((candidate) => existsSync(resolve(candidate, 'node.js')));
-  if (!root) throw new PortalError('PORTAL_CHANGED', 'The SII dependency is not built. Run `npm run build`.');
-  return root;
-}
-
-async function loadInstalledCore(): Promise<SiiCore> {
-  const root = siiDistRoot();
-  const nodeModule = await import(pathToFileURL(resolve(root, 'node.js')).href) as unknown as Record<string, unknown>;
-  const cliModule = await import(pathToFileURL(resolve(root, 'cli.js')).href) as unknown as Record<string, unknown>;
-  if (typeof nodeModule.createNodeRuntime !== 'function' || typeof cliModule.keyringLogin !== 'function') {
-    throw new PortalError('PORTAL_CHANGED', 'The SII dependency does not expose its expected login interface.');
-  }
-  return {
-    createNodeRuntime: nodeModule.createNodeRuntime as SiiCore['createNodeRuntime'],
-    keyringLogin: cliModule.keyringLogin as SiiCore['keyringLogin'],
-  };
-}
-
 export async function loginSiiWithPortalesProfile(
   input: { profile: string },
   dependencies: SiiAuthDependencies,
@@ -95,9 +58,9 @@ export async function loginSiiWithPortalesProfile(
   }
   const bundle = parseCredentialBundle(encodedBundle);
   const normalizedBundleRut = normalizeRut(bundle.rut);
-  const secretStore: SiiSecretStore = {
+  const secrets: SiiSecretReader = {
     get: (account) => Promise.resolve(normalizeRut(account) === normalizedBundleRut ? bundle.clave : null),
   };
-  const core = await (dependencies.loadCore ?? loadInstalledCore)();
-  return core.keyringLogin(core.createNodeRuntime({ secrets: secretStore }), { rut: bundle.rut });
+  const runtime = (dependencies.createRuntime ?? createPortalesSiiRuntime)(input.profile, { secrets });
+  return (dependencies.login ?? keyringLogin)(runtime, { rut: bundle.rut });
 }

@@ -10,21 +10,20 @@ describe('Portales SII authentication adapter', () => {
       rut: '20.000.042-0',
       clave: 'synthetic-clave',
     }));
-    const keyringLogin = vi.fn(async (runtime: {
-      secrets: { get(account: string): Promise<string | null> };
-    }, input: { rut: string }) => {
-      expect(await runtime.secrets.get(input.rut)).toBe('synthetic-clave');
-      return { authenticated: true, rut: input.rut, reason: 'keyring_login' };
+    const keyringLogin = vi.fn(async (
+      runtime: import('../../../services/sii/src/seams/index.js').Runtime,
+      input: { rut: string },
+    ) => {
+      expect(await runtime.secrets?.get(input.rut)).toBe('synthetic-clave');
+      return { authenticated: true as const, rut: input.rut, reason: 'keyring_login' as const };
     });
 
     const result = await loginSiiWithPortalesProfile(
       { profile: 'testing' },
       {
         secrets: { read },
-        loadCore: () => Promise.resolve({
-          createNodeRuntime: (overrides) => overrides,
-          keyringLogin,
-        }),
+        createRuntime: (_profile, overrides) => overrides as unknown as import('../../../services/sii/src/seams/index.js').Runtime,
+        login: keyringLogin,
       },
     );
 

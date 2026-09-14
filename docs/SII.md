@@ -1,100 +1,76 @@
-# SII dependency
+# SII native service
 
 - Slug: `sii`
-- Source: [`BipBop-Labs/sii`](https://github.com/BipBop-Labs/sii)
 - Location: `services/sii`
-- Integration: pinned Git submodule and delegated CLI
-- Toolchain: pnpm 10.33.2 inside the submodule; npm remains the Portales toolchain
+- Source of the initial implementation: selected MIT-licensed modules from [`BipBop-Labs/sii`](https://github.com/BipBop-Labs/sii)
+- Runtime: the Portales npm/TypeScript toolchain
 
-Portales does not copy or reimplement SII domain operations. Except for the
-profile-aware login described below, the complete argument vector following
-`portales sii` is delegated to the CLI built from the pinned fork commit. Standard
-input, output, and error are inherited unchanged, and the SII process exit code
-becomes the Portales exit code. This preserves the fork's JSON contract, browser
-behavior, throttling, confirmation gates, and legal-operation guardrails.
+SII is compiled directly into Portales. It is not a submodule, subprocess, pnpm workspace, or separately installed CLI. `services/sii/THIRD_PARTY_LICENSE.md` preserves the original license and attribution.
 
-## Keyring contract
+Only the capabilities exercised by Portales are included:
 
-SII follows the standard Portales profile convention:
+- explicit authentication and local session status/logout;
+- RCV summary, per-type list, and all-types list;
+- DTE authorization lookup;
+- Portal MIPYME companies, invoice drafts, previews, emitted-document listing, and PDF download.
+
+The DTE implementation can create, update, preview, list, and delete **drafts**. It can read already issued documents. It does **not** sign or legally issue an invoice.
+
+## Keyring and profile state
+
+Credentials follow the Portales profile convention:
 
 ```text
 service = cl.bipbop.portales.sii
 account = <profile>
 ```
 
-The secret is an opaque JSON bundle owned by the SII adapter:
+The value is a versioned JSON bundle containing `rut` and `clave`. It must be created interactively in the OS keyring and must never appear in arguments, files, logs, fixtures, or commits.
 
-```json
-{
-  "version": 1,
-  "rut": "20.000.042-0",
-  "clave": "synthetic-secret"
-}
-```
-
-The example is entirely synthetic. Real bundles must be created interactively
-and must never appear in arguments, environment variables, stdin payloads,
-repository files, logs, or fixtures.
-
-`portales sii auth login --profile <profile>` captures the bundle through the
-shared read-only `SecretReader`, validates its version, and gives the Clave only
-to the fork's `keyringLogin` task in memory. The login task makes one attempt and
-persists only the SII session material. Portales does not use the fork's legacy
-`service=sii, username=<rut>` keyring layout.
-
-## Installation
+Each profile stores cookies and audit receipts under Portales-owned user directories. Login is explicit and makes one attempt:
 
 ```bash
-git submodule update --init --recursive
-npm run setup:sii
-npm run build
-```
-
-`setup:sii` installs the exact pnpm version declared by the fork without mixing
-its dependency graph into Portales. `npm run build` builds SII first and then the
-Portales executable.
-
-## Usage
-
-Every upstream SII command keeps its existing shape after the service prefix:
-
-```bash
-portales sii --help
 portales sii auth login --profile default
-portales sii auth status
-portales sii rcv summary 2026-08
-portales sii f29 status 2026-08
+portales sii auth status --profile default
+portales sii auth logout --profile default
 ```
 
-JSON remains the default. `--human`, interactive prompts, and command-specific
-exit codes are passed through unchanged.
+All other commands use `default` when `--profile` is omitted.
 
-## Updating the pinned fork
-
-Only advance to commits present in `BipBop-Labs/sii`:
+## RCV purchases and sales
 
 ```bash
-git -C services/sii fetch origin
-git -C services/sii switch --detach origin/main
-npm run setup:sii
-npm run build
-npm run test:sii
-git add services/sii
+portales sii rcv summary 2026-09 --profile default
+portales sii rcv list 2026-09 --tipo 34 --profile default
+portales sii rcv all 2026-09 --profile default
 ```
 
-Review and commit the resulting gitlink change in Portales. Never silently track
-another remote or an unpinned branch.
+Add `--venta` for the sales register or `--rut <rut>` for an authorized represented entity.
 
-## Verification
+## Electronic invoicing
 
 ```bash
-npm test
-npm run test:sii
-npm run lint
-npm run lint:sii
-node dist/apps/cli/src/main.js sii --version
+portales sii dte authorized <rut>
+portales sii dte empresas --profile default
+portales sii dte emitidos --empresa <rut> --profile default
+portales sii dte pdf <folio> --empresa <rut> --profile default
+portales sii dte borrador list --empresa <rut> --profile default
+portales sii dte borrador save <invoice.json> --profile default
+portales sii dte borrador delete <id> --empresa <rut> --confirm <id> --profile default
+portales sii dte preview <invoice.json> --profile default
 ```
 
-Authenticated commands keep session storage owned by the SII dependency and
-credential storage under the Portales keyring contract. No SII secret or session
-material belongs in either repository.
+Invoice JSON files must be private regular files with mode `0600`. Draft deletion requires the exact id twice and is never retried. Produced PDFs default to the selected profile's private Portales data directory.
+
+## Verification methodology
+
+Use the public CLI against the real portal with the minimum calls. The maintained unit tests cover only regressions already encountered, notably the Portales keyring namespace. Do not mirror the upstream package's test suite or add fake infrastructure preemptively.
+
+The verified end-to-end path is:
+
+1. `auth login` from the Portales keyring profile;
+2. `rcv summary` for a real period;
+3. `dte empresas`;
+4. `dte emitidos` for one returned company.
+
+No write is needed to verify the integration.

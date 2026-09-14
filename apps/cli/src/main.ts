@@ -7,14 +7,16 @@ import { LoginBreaker } from '../../../services/bci-pyme/src/auth/login-breaker.
 import { PlaywrightBciLoginPortal, PlaywrightBciPymePortal } from '../../../services/bci-pyme/src/portal/playwright-portal.js';
 import { loginBciPyme } from '../../../services/bci-pyme/src/tasks/auth-login.js';
 import { loginSiiWithPortalesProfile } from './sii-auth.js';
-import { runSiiDependency } from './sii-dependency.js';
+import { runSiiNative } from './sii-native.js';
 
 const args = process.argv.slice(2);
 const stateRoot = process.env.XDG_STATE_HOME ?? join(homedir(), '.local', 'state');
 process.exitCode = await runCli(args, {
   openSessionPortal: (profile) => PlaywrightBciPymePortal.open(profile),
   loginSii: (input) => loginSiiWithPortalesProfile(input, { secrets: new SecretToolReader() }),
-  runSii: runSiiDependency,
+  runSii: (siiArgs) => runSiiNative(siiArgs, {
+    stdout: (value) => process.stdout.write(value),
+  }),
   login: (input) => loginBciPyme(input, {
     secrets: new SecretToolReader(),
     breaker: new LoginBreaker(stateRoot),

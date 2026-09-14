@@ -42,17 +42,11 @@ Before every commit and again before every push:
 
 Completion means the staged tree contains no user, client, or live-account data and this has been checked after the final edit.
 
-## Design discipline
+## Delivery discipline
 
-Before adding a public task, write its caller-facing comment and sketch two materially different interfaces. Choose the one with:
+Start with the real user-visible operation and the smallest implementation that can exercise it through the public CLI. Do not create seams, fakes, schemas, framework layers, or alternate interface sketches before the real flow demonstrates that they are needed.
 
-- the least information a caller must know;
-- the fewest parameters and special cases;
-- the strongest guardrails below the interface;
-- the most JSON-obvious result;
-- the easiest fake-backed test.
-
-Do not commit the sketches unless the choice is costly to reverse or surprising. In that case, add one short decision note under `docs/decisions/`.
+Prefer one readable end-to-end test of the public command. Add a unit test only after a real regression or a specific fragile boundary has been identified; the test must name that behavior. Do not build speculative test infrastructure or mirror third-party suites.
 
 Do not extract a shared abstraction from one service. The second real use must demonstrate that the abstraction removes more complexity than it adds.
 
@@ -61,9 +55,8 @@ Do not extract a shared abstraction from one service. The second real use must d
 A portal operation is not complete until:
 
 - its observed flow and contract are dated and documented;
-- its task is tested with fakes or sanitized fixtures;
-- CLI JSON behavior is tested;
-- every constrained input is backed by a tested CLI discovery command that lists all currently valid options and dependencies;
-- authentication, rate-limit, portal-change, and effect-specific failure paths are covered;
-- the supported public command was exercised;
-- any live validation was explicitly enabled, minimal, and verified against portal state.
+- the supported public command was exercised against the real portal;
+- its result was verified against observable portal state;
+- one lean end-to-end test covers the useful public path when it can run safely;
+- unit tests exist only for regressions or fragile pure boundaries already encountered;
+- authentication and writes remain explicit, bounded, and never automatically retried.

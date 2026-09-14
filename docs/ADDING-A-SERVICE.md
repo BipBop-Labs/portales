@@ -47,41 +47,25 @@ Follow `RESEARCH-FIRST.md`. Create a dated contract under `services/<service>/do
 
 Complete when selectors, request fields, token sources, response shape, readiness, success, and stop conditions are observed rather than inferred.
 
-## 4. Design the task twice
+## 4. Implement the thinnest useful slice
 
-Write the public comment and sketch two materially different task interfaces. Compare caller knowledge, parameter count, hidden complexity, failure surface, and testability. Keep the simpler deep interface.
+Implement one public CLI path that produces the observable result. Reuse existing modules and add only code needed by that path. Do not create speculative abstractions, alternate interfaces, fakes, or framework layers.
 
-Examples of different designs include:
+## 5. Add runtime seams only after concrete need
 
-- one task returning a complete result versus a sequence that leaks session steps;
-- domain parameters versus raw form fields;
-- one paginated iterator versus page-number plumbing at every caller.
-
-Do not create extra public methods merely to make each method shorter.
-
-Complete when the chosen task can be explained fully without exposing portal implementation details.
-
-## 5. Add only needed runtime seams
-
-Reuse the existing browser, keyring, session, clock, audit, and file seams. Add a seam only for a volatile dependency or a guardrail that cannot otherwise be tested.
+Reuse the existing browser, keyring, session, clock, audit, and file seams. Add a seam only when the real implementation cannot proceed safely without it.
 
 Do not extract shared portal behavior from one service. If this is the second use, compare both implementations and extract only shared knowledge with a smaller interface.
 
 ## 6. Implement the task first, then its CLI command
 
-Build in this order:
-
-1. boundary schema and typed result;
-2. portal adapter against sanitized fixtures/fakes;
-3. task policy and typed errors;
-4. CLI `options` commands for every portal-defined selector;
-5. operation command and JSON contract.
+Build the portal operation, task boundary, and CLI route as one vertical slice. Keep the result machine-readable and the guardrails below the public command.
 
 The CLI command calls the task and nothing below it.
 
-## 7. Test failure paths
+## 7. Test what matters
 
-At minimum cover invalid input, missing credentials/session, session expiry, provider error, rate limit/block, changed portal shape, and the operation's effect-specific guardrails. Login tests assert one attempt. Mutation tests assert no automatic retry and live-state verification.
+Prefer one lean end-to-end test of the public command. Add unit tests only for real regressions or fragile pure boundaries discovered while exercising the flow. Login and mutation tests must still prove no automatic retry.
 
 ## 8. Validate through the public interface
 
@@ -107,6 +91,6 @@ A short decision note is needed only for a cross-cutting, surprising, security-s
 - [ ] Every selector, location, account, and constrained field has an `options` command that returns the complete valid set
 - [ ] Dependent option lists expose and require their parent filters
 - [ ] Auth and writes are never retried automatically
-- [ ] Fixtures are synthetic and sanitized
-- [ ] Portal-change and account-block behavior stop safely
+- [ ] Any regression fixture is synthetic and minimal
+- [ ] Tests cover the useful public path, not speculative infrastructure
 - [ ] Public command was exercised and verified

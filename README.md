@@ -4,46 +4,44 @@ Agent-friendly tools for safe, consistent interaction with web portals.
 
 `portales` is a planned BipBop Labs TypeScript monorepo for integrations that do not have a dependable public API and therefore require browser automation, observed private requests, or both. The first intended service modules are:
 
-- `sii`: Chile's Servicio de Impuestos Internos, provided by the pinned [`BipBop-Labs/sii`](https://github.com/BipBop-Labs/sii) submodule.
+- `sii`: native Chilean SII authentication, RCV, and electronic-invoicing operations.
 - `sag`: the SAG digital entry declaration flow already proven through browser automation.
 - `bci-pyme`: BCI's business banking portal.
 
 Service specifications:
 
-- [`sii`](docs/SII.md): pinned-fork dependency, setup, update, and CLI delegation contract.
+- [`sii`](docs/SII.md): native profile, RCV, and safe DTE invoicing surface.
 - [`bci-pyme`](services/bci-pyme/docs/service.md): exact keyring namespace, authentication boundary, browser-session rules, and planned read-only calls.
 
 ## Setup
 
-Clone with submodules and install both isolated toolchains:
+Install the single npm toolchain:
 
 ```bash
-git clone --recurse-submodules https://github.com/BipBop-Labs/portales.git
+git clone https://github.com/BipBop-Labs/portales.git
 cd portales
 npm install --include=dev
-npm run setup:sii
 npm run build
 ```
 
-The SII command tree is available below the unified executable without being
-reimplemented by Portales:
+The native SII service is available through the unified executable:
 
 ```bash
-portales sii --version
-portales sii auth status
 portales sii auth login --profile default
-portales sii f29 status 2026-08
+portales sii rcv summary 2026-09 --profile default
+portales sii dte empresas --profile default
+portales sii dte emitidos --empresa <rut> --profile default
 ```
 
 ## Status
 
-The current branch implements a guarded BCI Pyme slice: explicit one-attempt login,
-session-only discovery, and validated cartola download. Its portal selectors remain
-fail-closed pending the live observations identified in the service contract.
+The repository implements guarded BCI Pyme operations and native SII authentication,
+RCV reads, and safe DTE draft/read operations. SII invoice signing and legal issuance
+remain out of scope.
 
 This is a public repository. Only synthetic examples and fixtures may be committed. Data from users, clients, chats, documents, screenshots, local files, or live portal sessions is never repository material.
 
-The next implementation should add one narrow, read-only operation end to end. It must begin with a real browser investigation, not guessed requests.
+New work starts with a real useful flow. Prefer one lean end-to-end test and add unit tests only for regressions or proven fragile boundaries.
 
 ## Why the name
 

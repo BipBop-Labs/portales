@@ -70,17 +70,17 @@ Replay a request only when DevTools observation proves its complete contract and
 
 Private endpoints are volatile implementation details. Keep them inside the service portal module and pair them with a dated contract and changed-shape detection.
 
-### 6. Record a sanitized fixture
+### 6. Add evidence only when it earns its cost
 
-Keep the smallest response fragment that exercises parsing, then construct a new synthetic fixture that preserves only the required structure, encoding, and edge cases. Do not transform user or live-account data into a fixture by merely masking a few fields. Never commit data supplied by any user, cookies, tokens, hidden anti-CSRF values, account numbers, RUTs, names, emails, balances, transaction descriptions, or document contents from a real account.
+Do not create a fixture by default. If a real regression exposes a fragile parser boundary, construct the smallest wholly synthetic fixture that reproduces that regression. Never transform live data into a fixture by masking it.
 
 ### 7. Implement one operation
 
-Implement through the public task boundary, then add the CLI command. Test against fakes or sanitized fixtures before any further live call.
+Implement the smallest path through the public CLI. Avoid new runtime seams or abstractions until a second concrete operation needs them.
 
 ### 8. Validate minimally
 
-A live validation must be explicitly enabled, make the minimum calls, and use the public command. Compare its result with the visible portal state. Never validate a write using throwaway financial, tax, legal, or administrative data.
+A live validation must be explicitly enabled, make the minimum calls, and use the public command. Compare its result with the visible portal state. Add a lean end-to-end test for this useful path when it can run safely; add narrower tests only for regressions found during the real validation. Never validate a write using throwaway financial, tax, legal, or administrative data.
 
 ## Stop immediately when
 
