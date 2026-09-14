@@ -4,7 +4,6 @@ import {
   deviceOmitName,
   isAuthenticatedLocation,
   isExpiredSessionLocation,
-  isObservedPhoneApprovalStage,
   publicLoginUrl,
   shouldProbeAuthenticatedSession,
   submitObservedLogin,
@@ -28,13 +27,20 @@ describe('BCI navigation boundaries', () => {
       'https://bel.bci.cl/cl/bci/aplicaciones/seguridad/autenticacion/vista/vistaSelectorConvenio.jsf',
       [],
       0,
+      1,
     )).toBe(true);
     expect(isAuthenticatedLocation('https://bel.bci.cl/LoginJSFGenerico', [
       'https://oss.bci.cl/fe-oss-shell-layout/',
-    ], 0)).toBe(false);
+    ], 0, 0)).toBe(false);
     expect(isAuthenticatedLocation(authenticatedShellUrl, [
       'https://oss.bci.cl/fe-oss-shell-dashboard/',
-    ], 0)).toBe(true);
+    ], 0, 0)).toBe(true);
+  });
+
+  it('does not accept a selector URL serving a system-error page without business rows', () => {
+    expect(isAuthenticatedLocation(
+      'https://synthetic.invalid/vistaSelectorConvenio.jsf', [], 0, 0,
+    )).toBe(false);
   });
 
   it('classifies the documented no-session route as an expired session', () => {
@@ -59,9 +65,4 @@ describe('BCI navigation boundaries', () => {
     expect(shouldProbeAuthenticatedSession(publicLoginUrl, false)).toBe(false);
   });
 
-  it('recognizes only the observed additional-authentication route for continuation', () => {
-    expect(isObservedPhoneApprovalStage('https://bel.bci.cl/seguridad/elige-metodo')).toBe(true);
-    expect(isObservedPhoneApprovalStage('https://bel.bci.cl/seguridad/otp')).toBe(false);
-    expect(isObservedPhoneApprovalStage(publicLoginUrl)).toBe(false);
-  });
 });

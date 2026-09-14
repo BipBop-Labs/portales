@@ -23,7 +23,7 @@ describe('auth.login risk controls', () => {
     const breaker = { assertClear: vi.fn(), trip: vi.fn() };
 
     await expect(loginBciPyme(
-      { profile: 'synthetic-profile', waitForPhoneApproval: true },
+      { profile: 'synthetic-profile' },
       { secrets: { read }, breaker, portal: { authenticate } },
     )).resolves.toEqual({ profile: 'synthetic-profile', authenticated: true });
 
@@ -34,7 +34,6 @@ describe('auth.login risk controls', () => {
     expect(authenticate).toHaveBeenCalledOnce();
     expect(authenticate).toHaveBeenCalledWith(
       expect.any(Object), expect.any(Function), expect.any(Function),
-      { waitForPhoneApproval: true },
     );
     expect(breaker.trip).not.toHaveBeenCalled();
   });

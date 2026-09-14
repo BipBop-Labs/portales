@@ -41,22 +41,88 @@ describe('public CLI', () => {
     expect(writes).toEqual(['{"profile":"testing","authenticated":true}\n']);
   });
 
-  it('opts into phone-approval continuation without accepting authentication secrets', async () => {
-    const login = vi.fn().mockResolvedValue({ profile: 'testing', authenticated: true });
-    const dependencies = {
-      login, openSessionPortal: vi.fn(), stdout: vi.fn(), stderr: vi.fn(),
-    };
-
+  it('rejects unsupported login arguments before accessing authentication', async () => {
+    const login = vi.fn();
+    const openSessionPortal = vi.fn();
     expect(await runCli([
-      'bci-pyme', 'auth', 'login', '--profile', 'testing', '--wait-for-phone-approval',
+      'bci-pyme', 'auth', 'login', '--profile', 'testing', '--unsupported-option',
+    ], { login, openSessionPortal, stdout: vi.fn(), stderr: vi.fn() })).toBe(2);
+    expect(login).not.toHaveBeenCalled();
+    expect(openSessionPortal).not.toHaveBeenCalled();
+  });
+
+  it('keeps credential setup separate from login and rejects credential arguments', async () => {
+    const setup = vi.fn().mockResolvedValue({ configured: true, profile: 'testing' });
+    const login = vi.fn();
+    const openSessionPortal = vi.fn();
+    const stdout = vi.fn();
+    const dependencies = { setup, login, openSessionPortal, stdout, stderr: vi.fn() };
+    expect(await runCli([
+      'bci-pyme', 'auth', 'setup', '--profile', 'testing',
     ], dependencies)).toBe(0);
-    expect(login).toHaveBeenCalledWith({ profile: 'testing', waitForPhoneApproval: true });
-
+    expect(setup).toHaveBeenCalledWith({ profile: 'testing' });
+    expect(stdout).toHaveBeenCalledWith('{"configured":true,"profile":"testing"}\n');
     expect(await runCli([
-      'bci-pyme', 'auth', 'login', '--profile', 'testing', '--wait-for-phone-approval',
-      '--otp', 'synthetic-secret',
+      'bci-pyme', 'auth', 'setup', '--profile', 'testing', '--password', 'synthetic-secret',
     ], dependencies)).toBe(2);
-    expect(login).toHaveBeenCalledOnce();
+    expect(setup).toHaveBeenCalledOnce();
+    expect(login).not.toHaveBeenCalled();
+    expect(openSessionPortal).not.toHaveBeenCalled();
+  });
+
+  it('discovers every recipient bank for the exact business without logging in', async () => {
+    const portal = {
+      requireAuthenticatedSession: vi.fn().mockResolvedValue(undefined),
+      discoverBusinesses: vi.fn().mockResolvedValue([{ id: 'synthetic-business', label: 'Synthetic Business' }]),
+      discoverRecipientBanks: vi.fn().mockResolvedValue([
+        { id: 'synthetic-bank-a', label: 'Synthetic Bank A' },
+        { id: 'synthetic-bank-b', label: 'Synthetic Bank B' },
+      ]),
+      close: vi.fn(),
+    };
+    const login = vi.fn();
+    const stdout = vi.fn();
+    const dependencies = { openSessionPortal: vi.fn().mockResolvedValue(portal), login, stdout, stderr: vi.fn() };
+    expect(await runCli([
+      'bci-pyme', 'destinatarios', 'options', '--profile', 'testing', '--business-id', 'synthetic-business',
+    ], dependencies)).toBe(0);
+    expect(JSON.parse(stdout.mock.calls[0]?.[0] as string)).toEqual({
+      field: 'bank-id', dependsOn: { businessId: 'synthetic-business' }, options: [
+        { id: 'synthetic-bank-a', label: 'Synthetic Bank A', aliases: [] },
+        { id: 'synthetic-bank-b', label: 'Synthetic Bank B', aliases: [] },
+      ],
+    });
+    expect(portal.discoverRecipientBanks).toHaveBeenCalledExactlyOnceWith('synthetic-business');
+    expect(await runCli([
+      'bci-pyme', 'destinatarios', 'options', '--profile', 'testing', '--business-id', 'unlisted-business',
+    ], dependencies)).toBe(2);
+    expect(portal.discoverRecipientBanks).toHaveBeenCalledOnce();
+    expect(login).not.toHaveBeenCalled();
+    expect(portal.close).toHaveBeenCalledTimes(2);
+  });
+
+  it('lists both recipient statuses only for a discovered business without authentication or writes', async () => {
+    const recipients = [
+      { status: 'authorized', name: 'Synthetic Recipient Alpha', alias: 'Synthetic A', rut: 'synthetic-rut-a', email: '', bank: 'Synthetic Bank', accountNumber: '00000001' },
+      { status: 'pending', name: 'Synthetic Recipient Beta', alias: 'Synthetic B', rut: 'synthetic-rut-b', email: '', bank: 'Synthetic Bank', accountNumber: '00000002' },
+    ];
+    const portal = {
+      requireAuthenticatedSession: vi.fn().mockResolvedValue(undefined),
+      discoverBusinesses: vi.fn().mockResolvedValue([{ id: 'synthetic-business', label: 'Synthetic Business' }]),
+      listRecipients: vi.fn().mockResolvedValue(recipients),
+      close: vi.fn(),
+    };
+    const login = vi.fn();
+    const stdout = vi.fn();
+    const dependencies = { openSessionPortal: vi.fn().mockResolvedValue(portal), login, stdout, stderr: vi.fn() };
+    const args = ['bci-pyme', 'destinatarios', 'list', '--profile', 'testing', '--business-id'];
+    expect(await runCli([...args, 'synthetic-business'], dependencies)).toBe(0);
+    expect(JSON.parse(stdout.mock.calls[0]?.[0] as string)).toEqual({ businessId: 'synthetic-business', recipients });
+    expect(portal.listRecipients).toHaveBeenCalledExactlyOnceWith('synthetic-business');
+    expect(await runCli([...args, 'unlisted-business'], dependencies)).toBe(2);
+    expect(portal.listRecipients).toHaveBeenCalledOnce();
+    expect(login).not.toHaveBeenCalled();
+    expect(portal.close).toHaveBeenCalledTimes(2);
   });
 
   it('emits businesses list JSON exactly once', async () => {

@@ -9,6 +9,12 @@ describe('selector discovery', () => {
       discoverBusinesses: vi.fn().mockResolvedValue([
         { id: 'business-synthetic-a', label: 'Empresa Sintética Uno' },
       ]),
+      discoverRecipientBanks: vi.fn(),
+      listRecipients: vi.fn(),
+      prepareRecipientCreation: vi.fn(),
+      createRecipient: vi.fn(),
+      authorizeRecipient: vi.fn(),
+      deleteRecipient: vi.fn(),
       discoverAccounts: vi.fn().mockResolvedValue([
         { id: 'account-synthetic-a', label: 'Cuenta Sintética Uno' },
         { id: 'account-synthetic-b', label: 'Cuenta Sintética Dos' },
@@ -36,6 +42,12 @@ describe('cartolas.download', () => {
       discoverBusinesses: vi.fn().mockResolvedValue([
         { id: 'business-synthetic-a', label: 'Empresa Sintética Uno' },
       ]),
+      discoverRecipientBanks: vi.fn(),
+      listRecipients: vi.fn(),
+      prepareRecipientCreation: vi.fn(),
+      createRecipient: vi.fn(),
+      authorizeRecipient: vi.fn(),
+      deleteRecipient: vi.fn(),
       discoverAccounts: vi.fn().mockResolvedValue([
         { id: 'account-synthetic-a', label: 'Cuenta Sintética Uno' },
       ]),

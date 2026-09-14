@@ -1,14 +1,18 @@
+import { writeDestinatario } from '../../../services/bci-pyme/src/tasks/destinatarios-write.js';
 import { readPrivateJson } from './private-input.js';
 import { PortalError } from '../../../services/bci-pyme/src/errors.js';
 import type { BciPymePortal, CartolaSelection } from '../../../services/bci-pyme/src/portal/types.js';
 import { listBusinesses } from '../../../services/bci-pyme/src/tasks/businesses-list.js';
 import { downloadCartolas } from '../../../services/bci-pyme/src/tasks/cartolas-download.js';
 import { listAccountOptions, listCartolaOptions } from '../../../services/bci-pyme/src/tasks/options.js';
+import { listDestinatarios } from '../../../services/bci-pyme/src/tasks/destinatarios-list.js';
+import { listDestinatarioOptions } from '../../../services/bci-pyme/src/tasks/destinatarios-options.js';
 import { runSag } from './sag.js';
 
 interface CliDependencies {
   openSessionPortal(profile: string): Promise<BciPymePortal & { close?: () => Promise<void> }>;
-  login(input: { profile: string; waitForPhoneApproval?: boolean }): Promise<unknown>;
+  setup?: (input: { profile: string }) => Promise<unknown>;
+  login(input: { profile: string }): Promise<unknown>;
   loginSii?: (input: { profile: string }) => Promise<unknown>;
   runSii?: (args: string[]) => Promise<number>;
   stdout(value: string): void;
@@ -44,15 +48,12 @@ async function readPrivateSelections(path: string): Promise<CartolaSelection[]> 
   return selections;
 }
 
-function loginInput(args: string[], profile: string): { profile: string; waitForPhoneApproval?: boolean } {
-  const waitForPhoneApproval = args.includes('--wait-for-phone-approval');
-  const expected = waitForPhoneApproval
-    ? ['bci-pyme', 'auth', 'login', '--profile', profile, '--wait-for-phone-approval']
-    : ['bci-pyme', 'auth', 'login', '--profile', profile];
+function loginInput(args: string[], profile: string): { profile: string } {
+  const expected = ['bci-pyme', 'auth', 'login', '--profile', profile];
   if (args.length !== expected.length || expected.some((value, index) => args[index] !== value)) {
-    throw new PortalError('INVALID_INPUT', 'auth login accepts only --profile and optional --wait-for-phone-approval.');
+    throw new PortalError('INVALID_INPUT', 'auth login accepts only --profile.');
   }
-  return waitForPhoneApproval ? { profile, waitForPhoneApproval: true } : { profile };
+  return { profile };
 }
 
 export async function runCli(args: string[], dependencies: CliDependencies): Promise<number> {
@@ -77,11 +78,35 @@ export async function runCli(args: string[], dependencies: CliDependencies): Pro
     if (args[0] !== 'bci-pyme') throw new PortalError('INVALID_INPUT', 'Unknown service.');
     const profile = option(args, '--profile');
     let result: unknown;
-    if (args[1] === 'auth' && args[2] === 'login') {
+    if (args[1] === 'auth' && args[2] === 'setup') {
+      const expected = ['bci-pyme', 'auth', 'setup', '--profile', profile];
+      if (args.length !== expected.length || expected.some((value, index) => args[index] !== value)) {
+        throw new PortalError('INVALID_INPUT', 'auth setup accepts only --profile; enter credentials at the hidden terminal prompts.');
+      }
+      if (!dependencies.setup) throw new PortalError('KEYRING_UNAVAILABLE', 'Interactive credential setup is unavailable.');
+      result = await dependencies.setup({ profile });
+    } else if (args[1] === 'auth' && args[2] === 'login') {
       result = await dependencies.login(loginInput(args, profile));
     } else if (args[1] === 'businesses' && args[2] === 'list') {
       portal = await dependencies.openSessionPortal(profile);
       result = await listBusinesses({ profile }, portal);
+    } else if (args[1] === 'destinatarios' && ['prepare', 'create', 'authorize', 'delete'].includes(args[2] ?? '')) {
+      const preview = args[2] === 'prepare';
+      const action = preview ? option(args, '--action') : args[2];
+      if (action !== 'create' && action !== 'authorize' && action !== 'delete') throw new PortalError('INVALID_INPUT', 'The action must be create, authorize or delete.');
+      const value = await readPrivateJson(option(args, '--input'));
+      const confirmation = preview ? undefined : option(args, '--confirm');
+      portal = await dependencies.openSessionPortal(profile);
+      result = await writeDestinatario({ profile, action, value, preview, ...(confirmation === undefined ? {} : { confirmation }) }, portal,
+        stage => { dependencies.stderr(`${JSON.stringify({ service: 'bci-pyme', operation: `destinatarios.${action}`, stage })}\n`); });
+    } else if (args[1] === 'destinatarios' && args[2] === 'list') {
+      const businessId = option(args, '--business-id');
+      portal = await dependencies.openSessionPortal(profile);
+      result = await listDestinatarios({ profile, businessId }, portal);
+    } else if (args[1] === 'destinatarios' && args[2] === 'options') {
+      const businessId = option(args, '--business-id');
+      portal = await dependencies.openSessionPortal(profile);
+      result = await listDestinatarioOptions({ profile, businessId }, portal);
     } else if (args[1] === 'accounts' && args[2] === 'options') {
       const businessId = option(args, '--business-id');
       portal = await dependencies.openSessionPortal(profile);
@@ -112,7 +137,7 @@ export async function runCli(args: string[], dependencies: CliDependencies): Pro
       message: failure.message,
       retryable: failure.retryable,
     } })}\n`);
-    return failure.code === 'INVALID_INPUT' ? 2
+    return failure.code === 'CONFIRMATION_REQUIRED' ? 8 : failure.code === 'INVALID_INPUT' ? 2
       : failure.code === 'NOT_AUTHENTICATED' || failure.code === 'SESSION_EXPIRED' ? 3
         : failure.code === 'LOGIN_FAILED' || failure.code === 'ADDITIONAL_AUTH_REQUIRED'
           || failure.code === 'CREDENTIALS_INVALID' || failure.code === 'CREDENTIALS_NOT_CONFIGURED'

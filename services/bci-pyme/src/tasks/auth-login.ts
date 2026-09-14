@@ -1,3 +1,4 @@
+import { isValidRut } from '../rut.js';
 import { SecretServiceError, type SecretReader } from '../../../../packages/runtime/src/secret-service.js';
 import { PortalError } from '../errors.js';
 import { requireSafeProfile } from '../auth/login-breaker.js';
@@ -8,7 +9,6 @@ export interface LoginPortal {
     credentials: BciCredentials,
     submitted: () => void,
     accepted: () => void,
-    options?: { waitForPhoneApproval: boolean },
   ): Promise<void>;
 }
 interface Breaker {
@@ -17,22 +17,7 @@ interface Breaker {
 }
 interface LoginDependencies { secrets: SecretReader; breaker: Breaker; portal: LoginPortal }
 
-function isValidRut(value: string): boolean {
-  const normalized = value.replace(/[.-]/gu, '').toUpperCase();
-  if (!/^\d{7,8}[0-9K]$/u.test(normalized)) return false;
-  const body = normalized.slice(0, -1);
-  let sum = 0;
-  let multiplier = 2;
-  for (let index = body.length - 1; index >= 0; index -= 1) {
-    sum += Number(body[index]) * multiplier;
-    multiplier = multiplier === 7 ? 2 : multiplier + 1;
-  }
-  const remainder = 11 - (sum % 11);
-  const checkDigit = remainder === 11 ? '0' : remainder === 10 ? 'K' : String(remainder);
-  return normalized.at(-1) === checkDigit;
-}
-
-function parseCredentials(value: string): BciCredentials {
+export function parseCredentials(value: string): BciCredentials {
   let parsed: unknown;
   try { parsed = JSON.parse(value); } catch { throw new PortalError('CREDENTIALS_INVALID', 'The configured credentials are invalid.'); }
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
@@ -49,7 +34,7 @@ function parseCredentials(value: string): BciCredentials {
 
 /** Makes one explicit BCI login attempt and returns only non-secret session status. */
 export async function loginBciPyme(
-  input: { profile: string; waitForPhoneApproval?: boolean },
+  input: { profile: string },
   dependencies: LoginDependencies,
 ) {
   requireSafeProfile(input.profile);
@@ -70,7 +55,6 @@ export async function loginBciPyme(
       credentials,
       () => { attempt.submitted = true; },
       () => { attempt.accepted = true; },
-      { waitForPhoneApproval: input.waitForPhoneApproval === true },
     );
   } catch (error: unknown) {
     if (attempt.submitted && !attempt.accepted) await dependencies.breaker.trip(input.profile);

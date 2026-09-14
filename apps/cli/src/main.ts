@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { SecretToolReader } from '../../../packages/runtime/src/secret-service.js';
 import { LoginBreaker } from '../../../services/bci-pyme/src/auth/login-breaker.js';
 import { PlaywrightBciLoginPortal, PlaywrightBciPymePortal } from '../../../services/bci-pyme/src/portal/playwright-portal.js';
+import { setupBciPyme } from '../../../services/bci-pyme/src/tasks/auth-setup.js';
 import { loginBciPyme } from '../../../services/bci-pyme/src/tasks/auth-login.js';
 import { loginSiiWithPortalesProfile } from './sii-auth.js';
 import { runSiiNative } from './sii-native.js';
@@ -17,6 +18,7 @@ if (virtualDisplay !== null) {
   process.exitCode = await virtualDisplay;
 } else {
   process.exitCode = await runCli(args, {
+    setup: setupBciPyme,
     openSessionPortal: (profile) => PlaywrightBciPymePortal.open(profile),
     loginSii: (input) => loginSiiWithPortalesProfile(input, { secrets: new SecretToolReader() }),
     runSii: (siiArgs) => runSiiNative(siiArgs, {
@@ -25,9 +27,7 @@ if (virtualDisplay !== null) {
     login: (input) => loginBciPyme(input, {
       secrets: new SecretToolReader(),
       breaker: new LoginBreaker(stateRoot),
-      portal: new PlaywrightBciLoginPortal(input.profile, () => {
-        process.stderr.write('{"status":"WAITING_FOR_PHONE_APPROVAL"}\n');
-      }),
+      portal: new PlaywrightBciLoginPortal(input.profile),
     }),
     stdout: (value) => process.stdout.write(value),
     stderr: (value) => process.stderr.write(value),

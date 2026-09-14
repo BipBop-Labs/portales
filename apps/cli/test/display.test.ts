@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { runWithVirtualDisplayIfNeeded } from '../src/display.js';
 
 describe('BCI virtual display regression', () => {
-  it('wraps only headless Linux BCI commands with xvfb-run', async () => {
+  it('runs Linux BCI invisibly even when the desktop has a display', async () => {
     const spawn = vi.fn(() => ({
       once(event: 'error' | 'exit', listener: ((error: Error) => void) | ((code: number, signal: null) => void)) {
         if (event === 'exit') {
@@ -17,7 +17,7 @@ describe('BCI virtual display regression', () => {
     const result = runWithVirtualDisplayIfNeeded(
       ['bci-pyme', 'businesses', 'list', '--profile', 'default'],
       {
-        env: {},
+        env: { DISPLAY: ':1' },
         platform: 'linux',
         executable: '/synthetic/node',
         entrypoint: '/synthetic/main.js',
@@ -30,12 +30,12 @@ describe('BCI virtual display regression', () => {
     expect(spawn).toHaveBeenCalledWith(
       'xvfb-run',
       ['-a', '/synthetic/node', '/synthetic/main.js', 'bci-pyme', 'businesses', 'list', '--profile', 'default'],
-      { stdio: 'inherit', env: { PORTALES_XVFB_ACTIVE: '1' }, detached: true },
+      { stdio: 'inherit', env: { DISPLAY: ':1', PORTALES_XVFB_ACTIVE: '1' }, detached: true },
     );
     expect(runWithVirtualDisplayIfNeeded(['sii', 'auth', 'status'], {
       env: {}, platform: 'linux', spawn,
     })).toBeNull();
-    expect(runWithVirtualDisplayIfNeeded(['bci-pyme', 'businesses', 'list'], {
+    expect(runWithVirtualDisplayIfNeeded(['bci-pyme', 'auth', 'setup'], {
       env: { DISPLAY: ':1' }, platform: 'linux', spawn,
     })).toBeNull();
     expect(runWithVirtualDisplayIfNeeded(['bci-pyme', 'businesses', 'list'], {

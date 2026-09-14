@@ -16,7 +16,7 @@
    The adapter makes one read-only navigation to the documented convention selector;
    a valid business listing there establishes acceptance. The relay alone is neither
    success nor failure.
-5. The authenticated convention selector lists one table row per business. The visible convention link is the portal-native business ID and the final cell is its label.
+5. The authenticated convention selector lists one table row per business. Wait for a visible business row before inspecting the complete list; navigation completion alone is insufficient. The visible convention link is the portal-native business ID and the final cell is its label.
 6. Selecting one exact discovered business loads the shell dashboard in the `fe-oss-shell-dashboard` frame.
 7. `Mis Movimientos` loads the `fe-oss-shell-mov-cuenta` frame.
 8. The current account is identified from the account-cartola widget heading and must match an ID returned by account discovery.
@@ -61,15 +61,72 @@ attempt then failed immediately with `PORTAL_CHANGED`. The adapter now performs 
 single observed native submission directly through the browser driver; synthetic tests
 require exactly one click and prohibit hidden trial/evaluate submission behavior.
 
-## 2026-09-14 phone-approval continuation
-
-The additional-authentication route containing `elige-metodo` was observed during the
-authorized login flow. An explicit CLI mode may preserve the same browser context for
-up to 15 minutes while the user completes the portal-driven phone approval. It does not
-select an authentication method, accept or expose an OTP/PIN, or repeat the login
-submission. Leaving the additional-authentication route is not success: the adapter
-still requires the documented authenticated selector or shell.
-
 ## Data handling
 
 Business labels and IDs, account labels and IDs, cartola contents, file paths, and descriptors are private financial data. Browser state and downloads live outside the repository in profile-specific directories with user-only permissions. Tests use independently authored synthetic values only.
+
+## 2026-09-14 session loss between CLI commands
+
+The initial failure returned HTTP 200 at the normal selector URL with a static
+system-error heading and no business rows. The URL alone therefore does not prove
+accepted authentication. Login and session checks now require rows when using the
+selector as evidence, and reads report the observed error page before parsing.
+
+Local diagnosis compared cookie metadata in Chrome's profile database with
+`BrowserContext.cookies()` immediately after reopening that same profile without
+navigation. BCI session cookies were present in the database but absent from the
+reopened context; persistent cookies survived. This explained the failure boundary
+between a successful login and the next independently invoked read. Increasing row
+waits or changing selectors cannot repair that missing session state.
+
+The adapter now checkpoints BCI cookies and origin local storage privately before
+closing Chrome and restores them before the next navigation. It saves no foreign-site
+state and does not extend cookie expiry. Failed authentication does not create a checkpoint; accepted
+post-login state can be preserved even if later navigation fails. There are no
+implicit logins or automatic retries.
+
+After the repair, explicit `auth login` followed by an independent `businesses list`
+succeeded through the public CLI. If the symptom recurs, inspect only cookie
+presence/expiry metadata and private-file permissions first, then the supported
+browser flow; never dump cookie values or reset the authentication breaker. A real
+expired-session response still requires explicit authentication.
+
+During live batch export, returning to the selector also exposed a readiness race.
+A headed observation showed an initially empty accessibility tree, followed by the
+normal business table without another operator action. The selector's own inline
+`ocultaSitio` logic reveals its panel after page readiness. The adapter now waits
+up to 30 seconds for the existing business-row locator to become visible before
+counting/parsing; this is a readiness wait, not a navigation retry. System-error
+and expired-session responses still stop the operation.
+
+The export reuses the movements frame opened by account discovery only while it
+remains attached at the observed movements destination for the same discovered
+business. Switching businesses clears that reference and repeats discovery. Export
+still checks the current account and widget immediately before download. This removes
+an unnecessary second dashboard load per account; the live dashboard also displayed
+a slow-site warning during diagnosis, so reducing navigation matters without raising
+timeouts or adding retries.
+
+A separate native Chrome failure cancelled downloads after reopening a profile that
+had previously downloaded a file. A synthetic localhost attachment reproduced this
+without any BCI navigation. Fresh profiles completed multiple downloads in one
+process. Migrating to a clean persistent profile helped only for its first process;
+reopening it reproduced the failure. Disabling GPU did not resolve it either.
+
+The maintained adapter therefore restores BCI cookies and local storage into a fresh
+temporary headed profile per command and checkpoints only that session state at close.
+The initial legacy-profile migration runs locally without authentication or navigation.
+This avoids carrying Chrome's internal download/UI state between processes. If a
+browser closes unexpectedly, cleanup preserves the original operation error instead
+of obscuring it with a failed session checkpoint. For recurrence, compare synthetic
+local downloads before making more bank requests; inspect process-exit metadata,
+never core contents or copied browser databases.
+
+Live verification after the final repair: the public `cartolas download` command
+completed a multi-business batch with exit 0. Both detailed XLSX exports passed the
+adapter's UI account checks and workbook validation; independent checks confirmed ZIP
+integrity, workbook structure, byte counts, SHA-256 and mode `0600`. No extra login
+was needed after preserving the authenticated state.
+
+On Linux the public CLI now uses headed Chrome on Xvfb even with an existing desktop
+display. This keeps normal browser rendering while making browser windows invisible.

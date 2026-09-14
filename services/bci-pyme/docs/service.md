@@ -5,7 +5,7 @@
 - Account scope: businesses and accounts available to one BCI Pyme login profile
 - Credential store: operating-system Secret Service
 - Authentication: explicit, one attempt, no automatic retry
-- Supported effects: read-only discovery and cartola download
+- Supported effects: discovery, cartola download, recipient creation, authorization and deletion
 
 ## Keyring namespace
 
@@ -35,14 +35,18 @@ Real values must never appear in documentation, examples, tests, shell history, 
 
 ## Credential setup
 
-Configure the bundle through the operating system's interactive Secret Service tooling:
+Run in an interactive terminal:
 
-Credential enrollment is intentionally outside the current CLI surface. Store the
-versioned JSON bundle directly through Secret Service using the contract in
-[`docs/KEYRING.md`](../../../docs/KEYRING.md); never pass it through command-line
-arguments or environment variables.
+```text
+portales bci-pyme auth setup --profile default
+```
 
-Do not provide a public command that accepts `--rut`, `--password`, credential JSON, or a credential-file path.
+The command reads both fields with terminal echo disabled, validates the credential
+bundle locally, and asks for confirmation before storing or replacing the exact
+Secret Service entry. It accepts only `--profile`; arguments, environment variables,
+files, and redirected stdin cannot supply credentials. It reports only configuration
+status and profile. Setup does not authenticate or reset a login breaker. Unlock the
+existing system keyring if needed; a failed store returns `KEYRING_UNAVAILABLE`.
 
 ## Login
 
@@ -51,18 +55,6 @@ Login is always explicit:
 ```text
 portales bci-pyme auth login --profile default
 ```
-
-For the observed `elige-metodo` phone-approval route, an operator may explicitly keep
-that same attempt open with:
-
-```text
-portales bci-pyme auth login --profile default --wait-for-phone-approval
-```
-
-This mode emits a machine-readable waiting status on STDERR, accepts no OTP or PIN,
-waits at most 15 minutes, and succeeds only after the authenticated selector or shell
-is positively identified. Without the flag, additional authentication retains the
-existing immediate-stop behavior.
 
 The implementation must:
 
@@ -82,11 +74,20 @@ Listing and download commands never perform implicit login.
 
 ## Browser session
 
-On Linux, every `portales bci-pyme ...` command transparently relaunches once under `xvfb-run -a` when no `DISPLAY` is available. Callers still use only the public `portales` interface; they must not prepend Xvfb manually or invoke compiled modules. Other services are not wrapped. Linux deployments that enable BCI Pyme must provide `xvfb-run` on `PATH`.
+On Linux, browser-backed `portales bci-pyme ...` commands transparently relaunch once under `xvfb-run -a`, even when a desktop `DISPLAY` is available. Chrome remains headed (`headless: false`) on a private virtual display, so no browser window appears on the desktop. Interactive credential setup stays in the caller’s terminal. Callers still use only the public `portales` interface; they must not prepend Xvfb manually or invoke compiled modules. Other services are not wrapped. Linux deployments that enable BCI Pyme must provide `xvfb-run` on `PATH`.
 
 The browser session is separate from the keyring item. It may contain cookies, CSRF values, device identifiers, and local storage, all of which are secrets.
 
 Store session state under a private service/profile-specific location with user-only permissions. Never combine BCI with another portal or organization in one browser profile. Session expiry returns `SESSION_EXPIRED`; it does not trigger login automatically.
+
+The adapter saves BCI cookies and origin local storage in `session-state.json`
+(mode `0600`, inside the private `0700` profile directory). Each command restores
+that state into a fresh temporary Chrome profile; downloads and other internal Chrome
+state are not reused. This preserves session cookies that Chromium otherwise drops
+between commands and avoids the observed crash when reopening a profile after a
+download. The temporary profile is removed when its browser closes. Existing profiles
+are migrated locally once without navigation or authentication. Session files are
+secrets, never diagnostics or repository content.
 
 A device-registration offer is not authorization to enroll the device. The adapter may choose the observed non-enrollment path only when documented and unambiguous. It must never activate device registration or approval.
 
@@ -111,7 +112,9 @@ An authentication failure or ambiguity before BCI accepts the login trips a dura
 
 ## Forbidden capabilities
 
-The BCI task surface must not include transfers, payments, beneficiaries, approvals, device enrollment, or any other bank write.
+Transfers, payments and device enrollment remain unsupported. Recipient creation and
+BciPass recipient authorization are supported; their live-verification status is
+tracked in [the recipient contract](contracts/destinatarios.md).
 
 ## Implemented read-only surface
 
@@ -122,8 +125,76 @@ The BCI task surface must not include transfers, payments, beneficiaries, approv
 - `accounts.options`: discovers all accounts for one exact discovered business ID.
 - `cartolas.options`: lists the documented cartola document types.
 - `cartolas.download`: validates discovered IDs and writes verified documents to a private user directory.
+- `destinatarios.options`: discovers the complete live bank catalog for a discovered business.
+- `destinatarios.list`: reads authorized and pending recipients and their detail fields for a discovered business.
+
+```text
+portales bci-pyme destinatarios options --profile default --business-id <discovered-id>
+portales bci-pyme destinatarios list --profile default --business-id <discovered-id>
+```
+
+Recipient listing returns `{ businessId, recipients }`. Each recipient has `status`
+(`authorized` or `pending`), `name`, `alias`, `rut`, `email`, `bank` and `accountNumber`.
+These values are private; redirect output only to a private file outside the repository.
+The currently verified listing supports one page per status; additional pages stop
+with `PORTAL_CHANGED` rather than returning an incomplete list.
 
 The current browser-flow contract records the sanitized live observations in [`contracts/read-only-browser-flow.md`](contracts/read-only-browser-flow.md). It must fail with `PORTAL_CHANGED` rather than broaden selectors when the real portal differs.
+
+## Recipient writes
+
+Discover the business with `businesses list` and bank with `destinatarios options`.
+Keep recipient JSON in a mode-0600 file outside the repository. Creation accepts
+`businessId`, `bankId`, `name`, `alias`, `rut`, `accountNumber`, optional `email` and
+optional `favorite` (default false). Authorization accepts only `businessId`, `bankId`,
+`rut` and `accountNumber`, identifying a recipient returned by `destinatarios list`.
+Account numbers must be strings. No account-type field is exposed by the observed form.
+
+```text
+portales bci-pyme destinatarios prepare --action create --profile default --input <private-json-file>
+portales bci-pyme destinatarios create --profile default --input <private-json-file> --confirm <preview-confirmation>
+portales bci-pyme destinatarios prepare --action authorize --profile default --input <private-json-file>
+portales bci-pyme destinatarios authorize --profile default --input <private-json-file> --confirm <preview-confirmation>
+```
+
+Prepare performs no write. Its confirmation binds the profile, operation, recipient,
+bank and current state; changed data requires a fresh preview. Creation refuses
+duplicates with conflicting details and reports an exact existing recipient without
+resubmission. Authorization likewise reports an already authorized recipient without
+sending another approval request. These commands never log in implicitly.
+
+The default flow separates creation from authorization. `create` submits once, then
+verifies the saved recipient in the listing and returns its actual status. It does
+not ask the user to approve the automatic challenge opened by the creation screen.
+If pending, prepare and execute `authorize` for that existing recipient.
+
+After a single authorization submission, `authorize` keeps the same browser open for
+up to five minutes. JSON progress on STDERR reports `awaiting-bcipass` and `verifying-bcipass`;
+approve in the phone app while the process runs. Do not terminate it, run another BCI
+command or close its browser during approval. No OTP is accepted through task inputs.
+Only a recognized terminal portal outcome allows listing reconciliation. A phone
+approval alone never produces success. STDOUT contains one final verified result.
+
+Creation normally returns `outcome: pending` when BCI saved the recipient. Use the
+separate authorization operation for that existing recipient.
+Unknown results or timeouts return `REMOTE_STATE_AMBIGUOUS`; inspect `destinatarios
+list` before another write. No mutation or authorization is automatically retried.
+
+## Recipient deletion
+
+Deletion accepts the same private selection fields as authorization: `businessId`,
+`bankId`, `rut`, `accountNumber`. It requires a fresh preview and its exact confirmation.
+
+```text
+portales bci-pyme destinatarios prepare --action delete --profile default --input <private-json-file>
+portales bci-pyme destinatarios delete --profile default --input <private-json-file> --confirm <preview-confirmation>
+```
+
+The adapter rechecks the recipient details in the selected business, opens the
+observed deletion question, and clicks its `Eliminar` button once. It returns
+`outcome: deleted` only after the recipient is absent from both statuses. A missing
+target, changed details, ambiguous confirmation or uncertain result stops execution.
+An error never triggers a second click. Deletion does not initiate a transfer.
 
 ## Related documentation
 

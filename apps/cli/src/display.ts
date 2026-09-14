@@ -30,14 +30,14 @@ interface VirtualDisplayOptions {
   stderr?: (value: string) => void;
 }
 
-/** Runs BCI under Xvfb on headless Linux while keeping `portales` as the only public interface. */
+/** Runs BCI in an invisible headed browser under Xvfb on Linux while keeping `portales` as the only public interface. */
 export function runWithVirtualDisplayIfNeeded(
   args: string[],
   options: VirtualDisplayOptions = {},
 ): Promise<number> | null {
   const env = options.env ?? process.env;
   const platform = options.platform ?? process.platform;
-  if (args[0] !== 'bci-pyme' || platform !== 'linux' || env.DISPLAY
+  if ((args[1] === 'auth' && args[2] === 'setup') || args[0] !== 'bci-pyme' || platform !== 'linux'
     || env.PORTALES_XVFB_ACTIVE === '1') return null;
 
   const spawn = options.spawn ?? nodeSpawn;
