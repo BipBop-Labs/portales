@@ -31,6 +31,7 @@ reimplemented by Portales:
 ```bash
 portales sii --version
 portales sii auth status
+portales sii auth login --profile default
 portales sii f29 status 2026-08
 ```
 

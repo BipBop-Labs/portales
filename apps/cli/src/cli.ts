@@ -8,6 +8,7 @@ import { listAccountOptions, listCartolaOptions } from '../../../services/bci-py
 interface CliDependencies {
   openSessionPortal(profile: string): Promise<BciPymePortal & { close?: () => Promise<void> }>;
   login(input: { profile: string }): Promise<unknown>;
+  loginSii?: (input: { profile: string }) => Promise<unknown>;
   runSii?: (args: string[]) => Promise<number>;
   stdout(value: string): void;
   stderr(value: string): void;
@@ -50,6 +51,17 @@ export async function runCli(args: string[], dependencies: CliDependencies): Pro
   let portal: (BciPymePortal & { close?: () => Promise<void> }) | undefined;
   try {
     if (args[0] === 'sii') {
+      if (args[1] === 'auth' && args[2] === 'login') {
+        const profile = option(args, '--profile');
+        const expected = ['sii', 'auth', 'login', '--profile', profile];
+        if (args.length !== expected.length || expected.some((value, index) => args[index] !== value)) {
+          throw new PortalError('INVALID_INPUT', 'SII auth login accepts only --profile.');
+        }
+        if (!dependencies.loginSii) throw new PortalError('PORTAL_CHANGED', 'The SII login dependency is unavailable.');
+        const result = await dependencies.loginSii({ profile });
+        dependencies.stdout(`${JSON.stringify(result)}\n`);
+        return 0;
+      }
       if (!dependencies.runSii) throw new PortalError('PORTAL_CHANGED', 'The SII dependency is unavailable.');
       return await dependencies.runSii(args.slice(1));
     }

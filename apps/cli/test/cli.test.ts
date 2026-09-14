@@ -5,6 +5,28 @@ import { describe, expect, it, vi } from 'vitest';
 import { runCli } from '../src/cli.js';
 
 describe('public CLI', () => {
+  it('logs in to SII through the Portales profile contract instead of the delegated CLI', async () => {
+    const writes: string[] = [];
+    const loginSii = vi.fn().mockResolvedValue({ authenticated: true, reason: 'keyring_login' });
+    const runSii = vi.fn();
+
+    expect(await runCli(
+      ['sii', 'auth', 'login', '--profile', 'testing'],
+      {
+        loginSii,
+        runSii,
+        login: vi.fn(),
+        openSessionPortal: vi.fn(),
+        stdout: (value) => writes.push(value),
+        stderr: vi.fn(),
+      },
+    )).toBe(0);
+
+    expect(loginSii).toHaveBeenCalledWith({ profile: 'testing' });
+    expect(runSii).not.toHaveBeenCalled();
+    expect(writes).toEqual(['{"authenticated":true,"reason":"keyring_login"}\n']);
+  });
+
   it('delegates sii commands to the pinned fork without constructing a BCI portal', async () => {
     const runSii = vi.fn().mockResolvedValue(0);
     const openSessionPortal = vi.fn();
