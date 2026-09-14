@@ -18,7 +18,9 @@ process.exitCode = await runCli(args, {
   login: (input) => loginBciPyme(input, {
     secrets: new SecretToolReader(),
     breaker: new LoginBreaker(stateRoot),
-    portal: new PlaywrightBciLoginPortal(input.profile),
+    portal: new PlaywrightBciLoginPortal(input.profile, () => {
+      process.stderr.write('{"status":"WAITING_FOR_PHONE_APPROVAL"}\n');
+    }),
   }),
   stdout: (value) => process.stdout.write(value),
   stderr: (value) => process.stderr.write(value),

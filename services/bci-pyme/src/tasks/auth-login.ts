@@ -8,6 +8,7 @@ export interface LoginPortal {
     credentials: BciCredentials,
     submitted: () => void,
     accepted: () => void,
+    options?: { waitForPhoneApproval: boolean },
   ): Promise<void>;
 }
 interface Breaker {
@@ -47,7 +48,10 @@ function parseCredentials(value: string): BciCredentials {
 }
 
 /** Makes one explicit BCI login attempt and returns only non-secret session status. */
-export async function loginBciPyme(input: { profile: string }, dependencies: LoginDependencies) {
+export async function loginBciPyme(
+  input: { profile: string; waitForPhoneApproval?: boolean },
+  dependencies: LoginDependencies,
+) {
   requireSafeProfile(input.profile);
   await dependencies.breaker.assertClear(input.profile);
   let encoded: string;
@@ -66,6 +70,7 @@ export async function loginBciPyme(input: { profile: string }, dependencies: Log
       credentials,
       () => { attempt.submitted = true; },
       () => { attempt.accepted = true; },
+      { waitForPhoneApproval: input.waitForPhoneApproval === true },
     );
   } catch (error: unknown) {
     if (attempt.submitted && !attempt.accepted) await dependencies.breaker.trip(input.profile);

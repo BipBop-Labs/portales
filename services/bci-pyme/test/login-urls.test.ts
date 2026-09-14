@@ -3,8 +3,13 @@ import {
   authenticatedShellUrl,
   deviceOmitName,
   isAuthenticatedLocation,
+  isExpiredSessionLocation,
+  isObservedPhoneApprovalStage,
   publicLoginUrl,
+  shouldProbeAuthenticatedSession,
+  submitObservedLogin,
 } from '../src/portal/playwright-portal.js';
+import { vi } from 'vitest';
 
 describe('BCI navigation boundaries', () => {
   it('keeps explicit login and session commands on different documented entries', () => {
@@ -30,5 +35,33 @@ describe('BCI navigation boundaries', () => {
     expect(isAuthenticatedLocation(authenticatedShellUrl, [
       'https://oss.bci.cl/fe-oss-shell-dashboard/',
     ], 0)).toBe(true);
+  });
+
+  it('classifies the documented no-session route as an expired session', () => {
+    expect(isExpiredSessionLocation(
+      'https://synthetic.invalid/cl/bci/aplicaciones/seguridad/loginNoSesion.jsf',
+    )).toBe(true);
+    expect(isExpiredSessionLocation(authenticatedShellUrl)).toBe(false);
+  });
+
+  it('submits the observed native form through one Playwright click', async () => {
+    const click = vi.fn().mockResolvedValue(undefined);
+
+    await submitObservedLogin({ click });
+
+    expect(click).toHaveBeenCalledOnce();
+    expect(click).toHaveBeenCalledWith();
+  });
+
+  it('probes the business selector once when login ends on the relay', () => {
+    expect(shouldProbeAuthenticatedSession('https://bel.bci.cl/LoginJSFGenerico', false)).toBe(true);
+    expect(shouldProbeAuthenticatedSession('https://bel.bci.cl/LoginJSFGenerico', true)).toBe(false);
+    expect(shouldProbeAuthenticatedSession(publicLoginUrl, false)).toBe(false);
+  });
+
+  it('recognizes only the observed additional-authentication route for continuation', () => {
+    expect(isObservedPhoneApprovalStage('https://bel.bci.cl/seguridad/elige-metodo')).toBe(true);
+    expect(isObservedPhoneApprovalStage('https://bel.bci.cl/seguridad/otp')).toBe(false);
+    expect(isObservedPhoneApprovalStage(publicLoginUrl)).toBe(false);
   });
 });

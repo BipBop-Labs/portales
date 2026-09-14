@@ -1,4 +1,5 @@
-import { readFile, stat } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { open } from 'node:fs/promises';
 import { PortalError } from '../../../services/bci-pyme/src/errors.js';
 import type { BciPymePortal, CartolaSelection } from '../../../services/bci-pyme/src/portal/types.js';
 import { listBusinesses } from '../../../services/bci-pyme/src/tasks/businesses-list.js';
@@ -7,7 +8,7 @@ import { listAccountOptions, listCartolaOptions } from '../../../services/bci-py
 
 interface CliDependencies {
   openSessionPortal(profile: string): Promise<BciPymePortal & { close?: () => Promise<void> }>;
-  login(input: { profile: string }): Promise<unknown>;
+  login(input: { profile: string; waitForPhoneApproval?: boolean }): Promise<unknown>;
   loginSii?: (input: { profile: string }) => Promise<unknown>;
   runSii?: (args: string[]) => Promise<number>;
   stdout(value: string): void;
@@ -32,11 +33,7 @@ function isSelection(value: unknown): value is CartolaSelection {
 }
 
 async function readPrivateSelections(path: string): Promise<CartolaSelection[]> {
-  const inputStat = await stat(path);
-  if (!inputStat.isFile() || (inputStat.mode & 0o077) !== 0) {
-    throw new PortalError('INVALID_INPUT', 'The input must be a private regular file without group or other permissions.');
-  }
-  const parsed: unknown = JSON.parse(await readFile(path, 'utf8'));
+  const parsed = await readPrivateJson(path);
   if (typeof parsed !== 'object' || parsed === null) {
     throw new PortalError('INVALID_INPUT', 'The input file must contain a JSON object.');
   }
@@ -45,6 +42,37 @@ async function readPrivateSelections(path: string): Promise<CartolaSelection[]> 
     throw new PortalError('INVALID_INPUT', 'The input file must contain valid cartola selections.');
   }
   return selections;
+}
+
+async function readPrivateJson(path: string): Promise<unknown> {
+  let input;
+  try {
+    input = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+    const inputStat = await input.stat();
+    if (!inputStat.isFile() || (inputStat.mode & 0o077) !== 0) {
+      throw new PortalError('INVALID_INPUT', 'The input must be a private regular file without group or other permissions.');
+    }
+    return JSON.parse(await input.readFile('utf8')) as unknown;
+  } catch (error: unknown) {
+    if (error instanceof PortalError) throw error;
+    if (error instanceof SyntaxError) {
+      throw new PortalError('INVALID_INPUT', 'The input file must contain valid JSON.');
+    }
+    throw new PortalError('INVALID_INPUT', 'The private input file could not be opened safely.');
+  } finally {
+    await input?.close();
+  }
+}
+
+function loginInput(args: string[], profile: string): { profile: string; waitForPhoneApproval?: boolean } {
+  const waitForPhoneApproval = args.includes('--wait-for-phone-approval');
+  const expected = waitForPhoneApproval
+    ? ['bci-pyme', 'auth', 'login', '--profile', profile, '--wait-for-phone-approval']
+    : ['bci-pyme', 'auth', 'login', '--profile', profile];
+  if (args.length !== expected.length || expected.some((value, index) => args[index] !== value)) {
+    throw new PortalError('INVALID_INPUT', 'auth login accepts only --profile and optional --wait-for-phone-approval.');
+  }
+  return waitForPhoneApproval ? { profile, waitForPhoneApproval: true } : { profile };
 }
 
 export async function runCli(args: string[], dependencies: CliDependencies): Promise<number> {
@@ -69,7 +97,7 @@ export async function runCli(args: string[], dependencies: CliDependencies): Pro
     const profile = option(args, '--profile');
     let result: unknown;
     if (args[1] === 'auth' && args[2] === 'login') {
-      result = await dependencies.login({ profile });
+      result = await dependencies.login(loginInput(args, profile));
     } else if (args[1] === 'businesses' && args[2] === 'list') {
       portal = await dependencies.openSessionPortal(profile);
       result = await listBusinesses({ profile }, portal);
@@ -108,7 +136,8 @@ export async function runCli(args: string[], dependencies: CliDependencies): Pro
         : failure.code === 'LOGIN_FAILED' || failure.code === 'ADDITIONAL_AUTH_REQUIRED'
           || failure.code === 'CREDENTIALS_INVALID' || failure.code === 'CREDENTIALS_NOT_CONFIGURED'
           || failure.code === 'KEYRING_LOCKED' || failure.code === 'KEYRING_UNAVAILABLE' ? 4
-        : failure.code === 'ACCOUNT_BLOCKED' || failure.code === 'RATE_LIMITED' ? 6 : 7;
+        : failure.code === 'AUTHORIZATION_DENIED' ? 5
+          : failure.code === 'ACCOUNT_BLOCKED' || failure.code === 'RATE_LIMITED' ? 6 : 7;
   } finally {
     await portal?.close?.();
   }

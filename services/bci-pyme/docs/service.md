@@ -52,6 +52,18 @@ Login is always explicit:
 portales bci-pyme auth login --profile default
 ```
 
+For the observed `elige-metodo` phone-approval route, an operator may explicitly keep
+that same attempt open with:
+
+```text
+portales bci-pyme auth login --profile default --wait-for-phone-approval
+```
+
+This mode emits a machine-readable waiting status on STDERR, accepts no OTP or PIN,
+waits at most 15 minutes, and succeeds only after the authenticated selector or shell
+is positively identified. Without the flag, additional authentication retains the
+existing immediate-stop behavior.
+
 The implementation must:
 
 1. verify that the BCI login circuit breaker is clear;
@@ -60,10 +72,11 @@ The implementation must:
 4. persist only the minimum authenticated browser session outside the repository;
 5. stop without retry on invalid credentials, unknown completion, CAPTCHA, MFA, Turnstile, access denial, rate limiting, block, or changed stages.
 
-The login control facts (`#rut_aux`, the unique password input, `INGRESAR`, and
-`Omitir por ahora`) come only from the pre-existing local implementation retained
-as historical evidence. They have not been re-observed live in this change. The
-adapter therefore uses each exact control once and fails closed on any mismatch.
+The login control facts (`#rut_aux`, the unique password input, `INGRESAR`, and the
+native top-level POST form) were re-observed in a headed browser on 2026-09-14 without
+submitting credentials. The adapter uses each exact control once and fails closed on
+any mismatch. `Omitir por ahora` remains authenticated-flow evidence from the dated
+contract.
 
 Listing and download commands never perform implicit login.
 
