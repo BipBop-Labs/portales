@@ -2,11 +2,13 @@
 
 This repository is designed to be changed by coding agents without sacrificing account safety or interface consistency.
 
-Portales is the agent's maintained operations adapter. Using a service, diagnosing a failure, repairing its adapter, and verifying the result belong to the same working loop. The agent using the tool owns that loop through completion; delegating implementation does not transfer responsibility for the real result.
+Portales is an agent-friendly tool framework that evolves through use. Agents build, use, and improve reusable CLI tools for external services as real tasks require them. Using a service, diagnosing a failure, repairing its adapter, and verifying the result belong to the same working loop. The agent using the tool owns that loop through completion; delegating implementation does not transfer responsibility for the real result.
 
 Build a reusable interface through actual use. Before interacting with an external service, look for its existing public command. Extend that command or add the smallest useful operation when the current task needs it. Browser investigation and temporary scripts may establish the flow, but a recurring capability belongs in the maintained CLI with its observed contract. Each completed task should leave the next agent able to reuse the capability without rediscovering portal internals. Let current needs drive the service catalog; do not implement a roadmap of hypothetical integrations.
 
 Explore before building. Read the existing command, service implementation, conventions, and observed contract; then investigate the exact real flow and understand the failure or missing behavior. Implement only after that evidence explains what must change. Follow the repository's existing patterns and extend its interfaces. Speed comes from a narrow understood change, never brute force, guessed requests, blind retries, or a parallel implementation that bypasses conventions.
+
+Help the next agent learn from this work. Preserve useful discoveries about how to explore, implement, debug, and verify efficiently: where authoritative evidence was found, which assumption failed and why, and the shortest verified path through the existing tools. Read and improve existing guidance before repeating an investigation. Put service-specific lessons beside the service contract; update shared guidance only when the lesson applies across services. Keep notes concise, structural, and supported by evidence. Update or remove stale advice when observations change. A useful lesson should save another agent a concrete step or prevent a known mistake; do not create a transcript or a mandatory report for every task.
 
 ## Read before changing anything
 

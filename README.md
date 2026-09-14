@@ -1,6 +1,8 @@
 # Portales
 
-The agent's maintained operations adapter for safe, consistent interaction with web portals.
+An agent-friendly tool framework that evolves through use.
+
+Portales gives agents a place to build, use, and improve their own tools for external services. Agents explore the real flow, turn what they learn into reusable CLI commands, and repair those commands as services change. They also leave practical guidance for other agents: where to look, which assumptions failed, and how to build and verify tools more efficiently. Each task leaves the next agent with better tools and a better way to work.
 
 `portales` is a BipBop Labs TypeScript monorepo for integrations that do not have a dependable public API and therefore require browser automation, observed private requests, or both. Service scope includes:
 
