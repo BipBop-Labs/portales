@@ -71,6 +71,7 @@ describe('BCI virtual display regression', () => {
 
   it('maps Xvfb launch failures to the stable CLI error contract', async () => {
     const child = new EventEmitter();
+    const signalSource = new EventEmitter();
     const writes: string[] = [];
     const result = runWithVirtualDisplayIfNeeded(['bci-pyme', 'businesses', 'list'], {
       env: {},
@@ -78,11 +79,12 @@ describe('BCI virtual display regression', () => {
       executable: '/synthetic/node',
       entrypoint: '/synthetic/main.js',
       spawn: vi.fn(() => child),
-      signalSource: new EventEmitter(),
+      signalSource,
       stderr: (value) => writes.push(value),
     });
 
     child.emit('error', new Error('spawn xvfb-run ENOENT /private/internal/path'));
+    child.emit('exit', 1, null);
 
     await expect(result).resolves.toBe(7);
     expect(writes).toEqual([
@@ -90,5 +92,7 @@ describe('BCI virtual display regression', () => {
     ]);
     expect(writes[0]).not.toContain('ENOENT');
     expect(writes[0]).not.toContain('/private/internal/path');
+    expect(signalSource.listenerCount('SIGINT')).toBe(0);
+    expect(signalSource.listenerCount('SIGTERM')).toBe(0);
   });
 });
