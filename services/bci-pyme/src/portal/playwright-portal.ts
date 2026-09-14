@@ -22,6 +22,15 @@ export const authenticatedShellUrl = 'https://bel.bci.cl/cl/bci/aplicaciones/con
 export const businessSelectorUrl = 'https://bel.bci.cl/cl/bci/aplicaciones/seguridad/autenticacion/vista/vistaSelectorConvenio.jsf';
 export const deviceOmitName = /^omitir(?: por ahora)?$/iu;
 
+/** Submits the observed native POST form once while preserving Playwright's navigation lifecycle. */
+export async function submitObservedLogin(control: Pick<Locator, 'click'>): Promise<void> {
+  await control.click();
+}
+
+export function shouldProbeAuthenticatedSession(pageUrl: string, alreadyProbed: boolean): boolean {
+  return !alreadyProbed && /\/LoginJSFGenerico(?:[?#]|$)/u.test(pageUrl);
+}
+
 export function isAuthenticatedLocation(
   pageUrl: string,
   frameUrls: string[],
@@ -30,6 +39,14 @@ export function isAuthenticatedLocation(
   return /vistaSelectorConvenio\.jsf/iu.test(pageUrl)
     || frameUrls.some((url) => /fe-oss-shell-dashboard/iu.test(url))
     || movementControls === 1;
+}
+
+export function isExpiredSessionLocation(pageUrl: string): boolean {
+  return /\/seguridad\/loginNoSesion\.jsf(?:[?#]|$)/u.test(pageUrl);
+}
+
+export function isObservedPhoneApprovalStage(pageUrl: string): boolean {
+  return /\/elige-metodo(?:[/?#]|$)/iu.test(pageUrl);
 }
 
 export function privateBciPaths(profile: string, stateRoot: string, dataRoot: string) {
@@ -53,13 +70,27 @@ export function browserLaunchOptions(proxyServer: string | undefined): Persisten
 }
 
 async function requireUnique(locator: Locator, description: string): Promise<Locator> {
-  if (await locator.count() !== 1) {
+  try {
+    await locator.first().waitFor({ state: 'visible', timeout: 30_000 });
+  } catch {
     throw new PortalError('PORTAL_CHANGED', `Expected exactly one ${description}.`);
   }
-  return locator;
+  const visible: Locator[] = [];
+  for (const candidate of await locator.all()) {
+    if (await candidate.isVisible()) visible.push(candidate);
+  }
+  if (visible.length !== 1) {
+    throw new PortalError('PORTAL_CHANGED', `Expected exactly one ${description}.`);
+  }
+  return visible[0] as Locator;
 }
 
 async function requireUniqueVisible(locator: Locator, description: string): Promise<Locator> {
+  try {
+    await locator.first().waitFor({ state: 'visible', timeout: 30_000 });
+  } catch {
+    throw new PortalError('PORTAL_CHANGED', `Expected exactly one visible ${description}.`);
+  }
   const visible: Locator[] = [];
   for (const candidate of await locator.all()) {
     if (await candidate.isVisible()) visible.push(candidate);
@@ -116,7 +147,8 @@ export class PlaywrightBciPymePortal implements BciPymePortal {
       this.page.frames().map((frame) => frame.url()),
       movementControls,
     )) return;
-    if (await this.page.getByRole('button', { name: 'Ingresar', exact: true }).count() > 0) {
+    if (isExpiredSessionLocation(this.page.url())
+      || await this.page.getByRole('button', { name: 'Ingresar', exact: true }).count() > 0) {
       throw new PortalError('SESSION_EXPIRED', 'The BCI session is not authenticated. Run auth login explicitly.');
     }
     throw new PortalError('PORTAL_CHANGED', 'The authenticated BCI shell was not uniquely identifiable.');
@@ -256,12 +288,16 @@ async function hasAuthenticatedShell(page: Page): Promise<boolean> {
 
 /** Owns the complete observed login interaction; callers cannot select enrollment or retry it. */
 export class PlaywrightBciLoginPortal implements LoginPortal {
-  constructor(private readonly profile: string) {}
+  constructor(
+    private readonly profile: string,
+    private readonly onWaitingForPhoneApproval: () => void = () => undefined,
+  ) {}
 
   async authenticate(
     credentials: BciCredentials,
     submitted: () => void,
     accepted: () => void,
+    options: { waitForPhoneApproval: boolean } = { waitForPhoneApproval: false },
   ): Promise<void> {
     const stateRoot = process.env.XDG_STATE_HOME ?? join(homedir(), '.local', 'state');
     const dataRoot = process.env.XDG_DATA_HOME ?? join(homedir(), '.local', 'share');
@@ -282,21 +318,38 @@ export class PlaywrightBciLoginPortal implements LoginPortal {
       await password.click();
       await password.pressSequentially(credentials.password);
       const enter = await requireUnique(page.getByRole('button', { name: /^ingresar$/iu }), 'INGRESAR button');
-      await enter.click({ trial: true });
-      await enter.evaluate((node: HTMLElement) => { node.click(); });
+      await submitObservedLogin(enter);
       submitted();
 
-      const deadline = Date.now() + 60_000;
+      const deadline = Date.now() + (options.waitForPhoneApproval ? 15 * 60_000 : 60_000);
       let omittedDeviceRegistration = false;
+      let probedAuthenticatedSession = false;
+      let reportedPhoneApproval = false;
       while (Date.now() < deadline) {
         const pages = context.pages();
         for (const candidate of pages) {
+          if (isObservedPhoneApprovalStage(candidate.url()) && options.waitForPhoneApproval) {
+            if (!reportedPhoneApproval) {
+              this.onWaitingForPhoneApproval();
+              reportedPhoneApproval = true;
+            }
+            continue;
+          }
           const stop = await detectedStop(candidate);
           if (stop !== undefined) throw stop;
           if (await hasAuthenticatedShell(candidate)) {
             accepted();
             return;
           }
+        }
+
+        const relay = pages.find((candidate) => shouldProbeAuthenticatedSession(
+          candidate.url(), probedAuthenticatedSession,
+        ));
+        if (relay !== undefined) {
+          probedAuthenticatedSession = true;
+          await relay.goto(businessSelectorUrl, { waitUntil: 'domcontentloaded' });
+          continue;
         }
 
         if (!omittedDeviceRegistration) {
@@ -316,6 +369,9 @@ export class PlaywrightBciLoginPortal implements LoginPortal {
           }
         }
         await page.waitForTimeout(250);
+      }
+      if (reportedPhoneApproval) {
+        throw new PortalError('ADDITIONAL_AUTH_REQUIRED', 'Phone approval did not complete within the bounded wait.');
       }
       throw new PortalError('REMOTE_STATE_AMBIGUOUS', 'The login result could not be verified safely.');
     } finally {

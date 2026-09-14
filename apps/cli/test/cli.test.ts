@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { runCli } from '../src/cli.js';
+import { PortalError } from '../../../services/bci-pyme/src/errors.js';
 
 describe('public CLI', () => {
   it('logs in to SII through the Portales profile contract instead of the delegated CLI', async () => {
@@ -53,6 +54,24 @@ describe('public CLI', () => {
     expect(login).toHaveBeenCalledWith({ profile: 'testing' });
     expect(openSessionPortal).not.toHaveBeenCalled();
     expect(writes).toEqual(['{"profile":"testing","authenticated":true}\n']);
+  });
+
+  it('opts into phone-approval continuation without accepting authentication secrets', async () => {
+    const login = vi.fn().mockResolvedValue({ profile: 'testing', authenticated: true });
+    const dependencies = {
+      login, openSessionPortal: vi.fn(), stdout: vi.fn(), stderr: vi.fn(),
+    };
+
+    expect(await runCli([
+      'bci-pyme', 'auth', 'login', '--profile', 'testing', '--wait-for-phone-approval',
+    ], dependencies)).toBe(0);
+    expect(login).toHaveBeenCalledWith({ profile: 'testing', waitForPhoneApproval: true });
+
+    expect(await runCli([
+      'bci-pyme', 'auth', 'login', '--profile', 'testing', '--wait-for-phone-approval',
+      '--otp', 'synthetic-secret',
+    ], dependencies)).toBe(2);
+    expect(login).toHaveBeenCalledOnce();
   });
 
   it('emits businesses list JSON exactly once', async () => {
@@ -106,5 +125,17 @@ describe('public CLI', () => {
     )).toBe(7);
     expect(stdout).not.toHaveBeenCalled();
     expect(stderr).toHaveBeenCalledWith('{"error":{"code":"PORTAL_CHANGED","message":"The operation could not be completed safely.","retryable":false}}\n');
+  });
+
+  it('uses the stable authorization-denied exit code', async () => {
+    const stderr = vi.fn();
+    expect(await runCli(
+      ['bci-pyme', 'businesses', 'list', '--profile', 'testing'],
+      {
+        openSessionPortal: vi.fn().mockRejectedValue(new PortalError('AUTHORIZATION_DENIED', 'Synthetic denial.')),
+        login: vi.fn(), stdout: vi.fn(), stderr,
+      },
+    )).toBe(5);
+    expect(stderr).toHaveBeenCalledWith('{"error":{"code":"AUTHORIZATION_DENIED","message":"Synthetic denial.","retryable":false}}\n');
   });
 });
