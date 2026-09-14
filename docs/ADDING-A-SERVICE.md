@@ -12,7 +12,7 @@ Create `services/<service>/docs/service.md` before code. Keep it concise and use
 - Slug: `<service>`
 - Official portal: `<url>`
 - Account scope: `<what one profile represents>`
-- Credential source: OS keyring service `cl.bipbop.portales.<service>`
+- Credential source: exact stable OS keyring service attribute and profile-to-account mapping
 - Known auth factors: `<password, MFA, device approval, unknown>`
 - Known lockout/rate-limit behavior: `<observed fact or unknown>`
 

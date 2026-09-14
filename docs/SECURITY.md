@@ -5,7 +5,8 @@ This is a public repository for tools that handle tax, identity, travel, and ban
 ## Credentials
 
 - The OS keyring is the only credential store.
-- Use service `cl.bipbop.portales.<service>` and a user-selected profile account name.
+- Each service specification owns the exact stable `service` attribute and profile-to-`account` mapping. `cl.bipbop.portales.<service>` is the default for new services, not a runtime derivation rule.
+- Follow [`KEYRING.md`](KEYRING.md) for setup, read capability, unlocking, rotation, and error contracts.
 - Capture credentials only through an interactive CLI command with hidden input and store them directly in the keyring.
 - Ordinary task runtimes receive a read-only `SecretReader`.
 - Never accept secrets through command arguments, environment variables, stdin pipes, config files, source code, logs, telemetry, fixtures, or issue text.

@@ -8,6 +8,10 @@ Agent-friendly tools for safe, consistent interaction with web portals.
 - `sag`: the SAG digital entry declaration flow already proven through browser automation.
 - `bci-pyme`: BCI's business banking portal.
 
+Service specifications:
+
+- [`bci-pyme`](services/bci-pyme/docs/service.md): exact keyring namespace, authentication boundary, browser-session rules, and planned read-only calls.
+
 ## Status
 
 Architecture and conventions only. No scraper, login flow, bank integration, or portal operation is implemented yet.
@@ -55,8 +59,9 @@ Agents should read these files in order:
 3. [`docs/RESEARCH-FIRST.md`](docs/RESEARCH-FIRST.md): how to investigate portals safely.
 4. [`docs/CONVENTIONS.md`](docs/CONVENTIONS.md): task, CLI, error, naming, and test contracts.
 5. [`docs/SECURITY.md`](docs/SECURITY.md): credentials, sessions, PII, audit, and write safety.
-6. [`docs/ADDING-A-SERVICE.md`](docs/ADDING-A-SERVICE.md): minimal service workflow and specification template.
-7. [`docs/decisions/README.md`](docs/decisions/README.md): lightweight decision notes, used only when warranted.
+6. [`docs/KEYRING.md`](docs/KEYRING.md): exact Secret Service ownership and runtime contract.
+7. [`docs/ADDING-A-SERVICE.md`](docs/ADDING-A-SERVICE.md): minimal service workflow and specification template.
+8. [`docs/decisions/README.md`](docs/decisions/README.md): lightweight decision notes, used only when warranted.
 
 ## Proposed future tree
 

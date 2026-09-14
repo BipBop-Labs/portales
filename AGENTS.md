@@ -8,8 +8,9 @@ This repository is designed to be changed by coding agents without sacrificing a
 2. `docs/RESEARCH-FIRST.md`
 3. `docs/CONVENTIONS.md`
 4. `docs/SECURITY.md`
-5. `docs/ADDING-A-SERVICE.md`
-6. The target service's `services/<service>/docs/service.md` and contracts, when they exist
+5. `docs/KEYRING.md`
+6. `docs/ADDING-A-SERVICE.md`
+7. The target service's `services/<service>/docs/service.md` and contracts, when they exist
 
 For design work, use the `ousterhout-software-design` skill from [`BipBop-Labs/bipbop-skills`](https://github.com/BipBop-Labs/bipbop-skills). Prefer deep modules, information hiding, obvious interfaces, and pulling unavoidable complexity below the task boundary.
 
