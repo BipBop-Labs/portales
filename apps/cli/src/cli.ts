@@ -1,10 +1,10 @@
-import { constants } from 'node:fs';
-import { open } from 'node:fs/promises';
+import { readPrivateJson } from './private-input.js';
 import { PortalError } from '../../../services/bci-pyme/src/errors.js';
 import type { BciPymePortal, CartolaSelection } from '../../../services/bci-pyme/src/portal/types.js';
 import { listBusinesses } from '../../../services/bci-pyme/src/tasks/businesses-list.js';
 import { downloadCartolas } from '../../../services/bci-pyme/src/tasks/cartolas-download.js';
 import { listAccountOptions, listCartolaOptions } from '../../../services/bci-pyme/src/tasks/options.js';
+import { runSag } from './sag.js';
 
 interface CliDependencies {
   openSessionPortal(profile: string): Promise<BciPymePortal & { close?: () => Promise<void> }>;
@@ -44,26 +44,6 @@ async function readPrivateSelections(path: string): Promise<CartolaSelection[]> 
   return selections;
 }
 
-async function readPrivateJson(path: string): Promise<unknown> {
-  let input;
-  try {
-    input = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
-    const inputStat = await input.stat();
-    if (!inputStat.isFile() || (inputStat.mode & 0o077) !== 0) {
-      throw new PortalError('INVALID_INPUT', 'The input must be a private regular file without group or other permissions.');
-    }
-    return JSON.parse(await input.readFile('utf8')) as unknown;
-  } catch (error: unknown) {
-    if (error instanceof PortalError) throw error;
-    if (error instanceof SyntaxError) {
-      throw new PortalError('INVALID_INPUT', 'The input file must contain valid JSON.');
-    }
-    throw new PortalError('INVALID_INPUT', 'The private input file could not be opened safely.');
-  } finally {
-    await input?.close();
-  }
-}
-
 function loginInput(args: string[], profile: string): { profile: string; waitForPhoneApproval?: boolean } {
   const waitForPhoneApproval = args.includes('--wait-for-phone-approval');
   const expected = waitForPhoneApproval
@@ -78,6 +58,7 @@ function loginInput(args: string[], profile: string): { profile: string; waitFor
 export async function runCli(args: string[], dependencies: CliDependencies): Promise<number> {
   let portal: (BciPymePortal & { close?: () => Promise<void> }) | undefined;
   try {
+    if (args[0] === 'sag') return await runSag(args.slice(1), value => { dependencies.stdout(value); });
     if (args[0] === 'sii') {
       if (args[1] === 'auth' && args[2] === 'login') {
         const profile = option(args, '--profile');
