@@ -27,6 +27,7 @@ interface VirtualDisplayOptions {
   spawn?: Spawn;
   signalSource?: SignalSource;
   killProcessGroup?: (pid: number, signal: NodeJS.Signals) => unknown;
+  stderr?: (value: string) => void;
 }
 
 /** Runs BCI under Xvfb on headless Linux while keeping `portales` as the only public interface. */
@@ -48,6 +49,7 @@ export function runWithVirtualDisplayIfNeeded(
     detached: true,
   });
   const signalSource = options.signalSource ?? process;
+  const stderr = options.stderr ?? ((value: string) => process.stderr.write(value));
   const killProcessGroup = options.killProcessGroup ?? ((pid: number, signal: NodeJS.Signals) => (
     process.kill(pid, signal)
   ));
@@ -67,14 +69,24 @@ export function runWithVirtualDisplayIfNeeded(
     signalSource.off('SIGINT', forwardInterrupt);
     signalSource.off('SIGTERM', forwardTerminate);
   };
-  return new Promise((resolve, reject) => {
-    child.once('error', (error) => {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (code: number) => {
+      if (settled) return;
+      settled = true;
       cleanup();
-      reject(error);
+      resolve(code);
+    };
+    child.once('error', () => {
+      stderr(`${JSON.stringify({ error: {
+        code: 'PORTAL_CHANGED',
+        message: 'The operation could not be completed safely.',
+        retryable: false,
+      } })}\n`);
+      finish(7);
     });
     child.once('exit', (code, signal) => {
-      cleanup();
-      resolve(code ?? (signal ? 128 + constants.signals[signal] : 0));
+      finish(code ?? (signal ? 128 + constants.signals[signal] : 0));
     });
   });
 }
