@@ -9,7 +9,7 @@ Portales grows through use: a real task establishes a need, the agent implements
 3. On failure, stop remote execution where required. Inspect existing evidence and code before making another request. Separate local setup, authentication, session state, portal contract, and result-verification failures.
 4. Fix the smallest responsible boundary using existing repository conventions and interfaces. For a new flow or changed portal behavior, observe the exact operation in the real browser before implementing selectors or replay. Never brute-force endpoints, fields, or identifiers to discover a contract. Update the dated structural contract. If evidence is missing, add only the diagnostic context needed to explain this failure.
 5. Run relevant local checks. Verify the repaired public command against the live portal only within the existing authorization and stop rules. An ambiguous mutation requires state reconciliation, never another submission to see whether the fix works.
-6. Leave the reusable command and maintenance notes in the repository. Report what worked, what was verified live, and any remaining blocker. Local checks alone cannot close an unverified portal operation.
+6. Leave the reusable command and useful lessons for the next agent in the repository. Improve existing guidance with what made exploration, implementation, diagnosis, or verification more effective. Report what worked, what was verified live, and any remaining blocker. Local checks alone cannot close an unverified portal operation.
 
 A temporary workaround is not the maintained capability. Bring useful behavior back into the service task and public CLI before declaring the integration complete. Do not add unrelated commands, general frameworks, or exhaustive tests along the way.
 
@@ -63,5 +63,7 @@ If persistent logging is introduced for a demonstrated need, keep it outside the
 ## Durable learning and tests
 
 Record only reusable structural knowledge: dated behavior, the failed assumption, the corrected success/stop condition, and the public command used to verify it without private arguments or outputs. Keep service knowledge in the service documentation and contract. Avoid a parallel incident database or copied execution transcript.
+
+Teach the investigation method as well as the resulting contract. When a discovery will help another agent, explain where to find authoritative evidence, what observation distinguished competing explanations, which existing tool or convention simplified the implementation, and how to verify with the fewest safe calls. Record a failed approach only when its reason for failure prevents a likely repeat. Consult these lessons before exploring again, and correct stale guidance when new evidence contradicts it. Promote a lesson to shared documentation only when it applies across services; no separate learning framework or per-task report is required.
 
 Add a regression test when it reproduces an actual failure, or a small check for an identified fragile safety boundary. Prefer the useful public path and wholly synthetic data. Zero new tests is a valid decision. Preserve existing safety checks and run checks appropriate to the changed code; do not use test count or mock coverage as evidence that the portal works.
