@@ -21,6 +21,14 @@ export const publicLoginUrl = 'https://www.bci.cl/corporativo/banco-en-linea/pym
 export const authenticatedShellUrl = 'https://bel.bci.cl/cl/bci/aplicaciones/contenidoLayoutOSSPyme.jsf';
 export const businessSelectorUrl = 'https://bel.bci.cl/cl/bci/aplicaciones/seguridad/autenticacion/vista/vistaSelectorConvenio.jsf';
 export const deviceOmitName = /^omitir(?: por ahora)?$/iu;
+const detailedWorkbookLabels = [
+  'Fecha de transacción',
+  'Código de transacción',
+  'Glosa detalle',
+  'Ingreso (+)',
+  'Egreso (-)',
+  'Saldo contable',
+] as const;
 
 /** Submits the observed native POST form once while preserving Playwright's navigation lifecycle. */
 export async function submitObservedLogin(control: Pick<Locator, 'click'>): Promise<void> {
@@ -254,7 +262,7 @@ export class PlaywrightBciPymePortal implements BciPymePortal {
     const path = join(this.downloadDirectory, `cartola-${randomUUID()}.xlsx`);
     await download.saveAs(path);
     const mediaType: SupportedDownloadMediaType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-    return validateDownloadedFile(path, mediaType);
+    return validateDownloadedFile(path, mediaType, undefined, detailedWorkbookLabels);
   }
 }
 

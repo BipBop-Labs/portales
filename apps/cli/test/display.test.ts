@@ -59,7 +59,10 @@ describe('BCI virtual display regression', () => {
     });
 
     signalSource.emit('SIGTERM');
-    expect(killProcessGroup).toHaveBeenCalledWith(-321, 'SIGTERM');
+    signalSource.emit('SIGTERM');
+    expect(killProcessGroup).toHaveBeenCalledTimes(2);
+    expect(killProcessGroup).toHaveBeenNthCalledWith(1, -321, 'SIGTERM');
+    expect(killProcessGroup).toHaveBeenNthCalledWith(2, -321, 'SIGTERM');
     child.emit('exit', null, 'SIGTERM');
     await expect(result).resolves.toBe(143);
     expect(signalSource.listenerCount('SIGINT')).toBe(0);

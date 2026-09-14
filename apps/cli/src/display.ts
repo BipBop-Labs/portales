@@ -9,7 +9,7 @@ interface ChildHandle {
 }
 
 interface SignalSource {
-  once(event: 'SIGINT' | 'SIGTERM', listener: () => void): unknown;
+  on(event: 'SIGINT' | 'SIGTERM', listener: () => void): unknown;
   off(event: 'SIGINT' | 'SIGTERM', listener: () => void): unknown;
 }
 
@@ -61,8 +61,8 @@ export function runWithVirtualDisplayIfNeeded(
   };
   const forwardInterrupt = forward('SIGINT');
   const forwardTerminate = forward('SIGTERM');
-  signalSource.once('SIGINT', forwardInterrupt);
-  signalSource.once('SIGTERM', forwardTerminate);
+  signalSource.on('SIGINT', forwardInterrupt);
+  signalSource.on('SIGTERM', forwardTerminate);
   const cleanup = () => {
     signalSource.off('SIGINT', forwardInterrupt);
     signalSource.off('SIGTERM', forwardTerminate);

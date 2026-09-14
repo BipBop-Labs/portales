@@ -61,4 +61,21 @@ describe('download validation', () => {
       'Different Business',
     )).rejects.toMatchObject({ code: 'PORTAL_CHANGED' });
   });
+
+  it('requires configured semantic labels inside an XLSX', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'portales-synthetic-'));
+    const path = join(directory, 'cartola.xlsx');
+    const zip = new JSZip();
+    zip.file('[Content_Types].xml', '<Types/>');
+    zip.file('xl/workbook.xml', '<workbook/>');
+    zip.file('xl/worksheets/sheet1.xml', '<sheet>Unrelated workbook</sheet>');
+    await writeFile(path, await zip.generateAsync({ type: 'nodebuffer' }));
+
+    await expect(validateDownloadedFile(
+      path,
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      undefined,
+      ['Fecha de transacción', 'Saldo contable'],
+    )).rejects.toMatchObject({ code: 'PORTAL_CHANGED' });
+  });
 });
