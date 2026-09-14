@@ -2,15 +2,18 @@
 
 ## Summary
 
-- Website/page/flow changed:
-- Browser evidence date:
-- Deterministic replay status:
+<!-- What changed and why? Do not paste live portal data. -->
 
-## Public-data gate
+## Safety checklist
 
-- [ ] Every changed filename and the complete diff were inspected
-- [ ] No live identity, company, client, account, card, balance, movement, transaction, address, email, phone number, RUT, or document content is present
-- [ ] No credential, cookie, token, browser profile, screenshot, trace, HAR, download, or copied payload is present
-- [ ] Examples are independently synthetic, not masked live data
-- [ ] Relative links resolve
-- [ ] Markdown lint passes
+- [ ] I inspected every staged filename and the complete staged diff.
+- [ ] No data from users, clients, chats, emails, documents, screenshots, local files, or live accounts is included.
+- [ ] Examples and fixtures were created from scratch with obviously synthetic identities and values.
+- [ ] No real names, addresses, RUTs, emails, phone numbers, account/card numbers, balances, transaction descriptions, credentials, cookies, tokens, session data, or document text is included.
+- [ ] No screenshots, HAR files, browser traces, downloads, session files, or copied live payloads are included.
+- [ ] Authentication and mutations are not retried automatically.
+- [ ] Portal behavior is backed by dated browser-first evidence.
+
+## Verification
+
+<!-- Commands run and observable results. Never include secrets or live data. -->
