@@ -35,13 +35,12 @@ Real values must never appear in documentation, examples, tests, shell history, 
 
 ## Credential setup
 
-Create or replace the bundle only through the interactive command:
+Configure the bundle through the operating system's interactive Secret Service tooling:
 
-```text
-portales bci-pyme auth setup --profile default
-```
-
-The command prompts for RUT and password with terminal echo disabled and writes the bundle directly to the exact keyring item above. It returns no credential field.
+Credential enrollment is intentionally outside the current CLI surface. Store the
+versioned JSON bundle directly through Secret Service using the contract in
+[`docs/KEYRING.md`](../../../docs/KEYRING.md); never pass it through command-line
+arguments or environment variables.
 
 Do not provide a public command that accepts `--rut`, `--password`, credential JSON, or a credential-file path.
 
@@ -60,6 +59,11 @@ The implementation must:
 3. make exactly one login attempt;
 4. persist only the minimum authenticated browser session outside the repository;
 5. stop without retry on invalid credentials, unknown completion, CAPTCHA, MFA, Turnstile, access denial, rate limiting, block, or changed stages.
+
+The login control facts (`#rut_aux`, the unique password input, `INGRESAR`, and
+`Omitir por ahora`) come only from the pre-existing local implementation retained
+as historical evidence. They have not been re-observed live in this change. The
+adapter therefore uses each exact control once and fails closed on any mismatch.
 
 Listing and download commands never perform implicit login.
 
@@ -84,15 +88,27 @@ portales bci-pyme cartolas download --profile default --input <private-json-file
 
 Business and account IDs must come from the corresponding discovery command. They must not be guessed from labels or placed in public examples.
 
-The private download input carries selected discovered IDs, date range, and document type. The result contains private file descriptors only: generated path, media type, byte count, checksum, and per-item status. It never returns document contents.
+The private download input carries selected discovered IDs and document type. It exports the portal's current movements view; the observed UI does not expose a date-range dialog. The result contains private file descriptors only: generated path, media type, byte count, checksum, and per-item status. It never returns document contents.
 
 ## Circuit breaker
 
-Any failed or ambiguous login trips a durable profile-specific circuit breaker. Ordinary tasks cannot reset or bypass it. Reset requires explicit human review and a separate administrative operation. A reset authorizes clearing state, not an automatic login attempt.
+An authentication failure or ambiguity before BCI accepts the login trips a durable profile-specific circuit breaker. Errors after acceptance are post-login failures and may be retried through the authenticated session without re-entering credentials. Ordinary tasks cannot reset or bypass a genuine authentication breaker. Reset requires explicit human review and a separate administrative operation.
 
 ## Forbidden capabilities
 
 The BCI task surface must not include transfers, payments, beneficiaries, approvals, device enrollment, or any other bank write.
+
+## Implemented read-only surface
+
+- `auth.login`: performs one explicit keyring-backed login and trips the profile
+  breaker only when authentication fails or remains ambiguous before acceptance.
+
+- `businesses.list`: discovers businesses from an existing authenticated session.
+- `accounts.options`: discovers all accounts for one exact discovered business ID.
+- `cartolas.options`: lists the documented cartola document types.
+- `cartolas.download`: validates discovered IDs and writes verified documents to a private user directory.
+
+The current browser-flow contract records the sanitized live observations in [`contracts/read-only-browser-flow.md`](contracts/read-only-browser-flow.md). It must fail with `PORTAL_CHANGED` rather than broaden selectors when the real portal differs.
 
 ## Related documentation
 

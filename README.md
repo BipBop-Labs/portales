@@ -14,7 +14,9 @@ Service specifications:
 
 ## Status
 
-Architecture and conventions only. No scraper, login flow, bank integration, or portal operation is implemented yet.
+The current branch implements a guarded BCI Pyme slice: explicit one-attempt login,
+session-only discovery, and validated cartola download. Its portal selectors remain
+fail-closed pending the live observations identified in the service contract.
 
 This is a public repository. Only synthetic examples and fixtures may be committed. Data from users, clients, chats, documents, screenshots, local files, or live portal sessions is never repository material.
 
