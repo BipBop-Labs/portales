@@ -7,6 +7,7 @@
 *.p12
 *.pfx
 *.mobileprovision
+*.keyring
 
 # Browser and authenticated session material
 .auth/
@@ -14,11 +15,14 @@
 sessions/
 browser-data/
 playwright/.auth/
+.private/
+private/
+*.cookie*
 *.har
 *.trace
 trace.zip
 
-# Captures and downloaded account data
+# Captures and downloaded portal data
 screenshots/
 artifacts/
 downloads/
@@ -26,8 +30,12 @@ downloads/
 *.csv
 *.xlsx
 *.zip
+*.png
+*.jpg
+*.jpeg
+*.webp
 
-# JavaScript and TypeScript
+# Optional local validation tooling
 node_modules/
 dist/
 coverage/
