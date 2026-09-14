@@ -43,6 +43,14 @@ This is a public repository. Only synthetic examples and fixtures may be committ
 
 New work starts with a real useful flow. Prefer one lean end-to-end test and add unit tests only for regressions or proven fragile boundaries.
 
+## Disclaimer
+
+Unofficial project. Not affiliated with, endorsed by, or supported by the Servicio de Impuestos Internos (SII), Banco de Crédito e Inversiones (BCI), or any other portal operator. Use it only with your own credentials and at your own risk; portal terms of service still apply.
+
+## License
+
+MIT, see [`LICENSE`](LICENSE). Portions of `services/sii` are derived from MIT-licensed work, see [`services/sii/THIRD_PARTY_LICENSE.md`](services/sii/THIRD_PARTY_LICENSE.md).
+
 ## Why the name
 
 **Portales** says what the repository is about without naming a transport. A service may begin as browser automation and later replay an observed request without changing its public identity.

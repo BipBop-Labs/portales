@@ -200,7 +200,7 @@ export function parseChooser(html: string): ChooserShape {
   const re = /<option\s+value="([^"]+)"\s*>([^<\n]*)/gi;
   for (let m = re.exec(select); m; m = re.exec(select)) {
     const rut = (m[1] ?? '').trim();
-    // The label repeats the RUT ("RAZON SOCIAL 76192083-9") — strip it for a clean name.
+    // The label repeats the RUT ("RAZON SOCIAL 77777777-7") — strip it for a clean name.
     const nombre = (m[2] ?? '')
       .trim()
       .replace(new RegExp(`\\s*${rut.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`), '')
@@ -598,7 +598,7 @@ async function postLatin1(
 
 /** In-page: read the empresa the portal ALREADY scoped this session to, off the factura form.
  *  Two sources, both observed 2026-09-09 on a single-empresa persona account:
- *   * the RUT is the DTE header box — `<div class="well well-sm"><strong>Rut 76192083-9</strong>
+ *   * the RUT is the DTE header box — `<div class="well well-sm"><strong>Rut 77777777-7</strong>
  *     FACTURA ELECTRÓNICA N° folio no asignado</div>` — the EMISOR by construction of the
  *     document. NOT the navbar's `Rut:` (`ul#conAutenticacion`), not `cook_rut`, not the
  *     `NETSCAPE_LIVEWIRE.rut` / `RUT_NS` cookies: those are the LOGGED-IN principal, which on a
@@ -946,7 +946,7 @@ const cellNumber = (v: string | undefined): number | null => {
 const CELDAS_EMITIDA = 7;
 
 /** Parse the emitted-documents table. The markup is MALFORMED — SII leaves the receptor cell
- *  unclosed (`<td>64000001-5 <td>NOMBRE</td>`, observed 2026-09-08) — so rows are split on the
+ *  unclosed (`<td>11111111-1 <td>NOMBRE</td>`, observed 2026-09-08) — so rows are split on the
  *  `mipeGesDocEmi.cgi?...CODIGO=` anchor and cells on `<td`, never with a strict parser.
  *
  *  Cells map POSITIONALLY and a blank one is NEVER dropped. A `PRV` (vista previa) document has
