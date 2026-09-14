@@ -80,7 +80,7 @@ Implement the smallest path through the public CLI. Avoid new runtime seams or a
 
 ### 8. Validate minimally
 
-A live validation must be explicitly enabled, make the minimum calls, and use the public command. Compare its result with the visible portal state. Add a lean end-to-end test for this useful path when it can run safely; add narrower tests only for regressions found during the real validation. Never validate a write using throwaway financial, tax, legal, or administrative data.
+A live validation must be explicitly enabled, make the minimum calls, and use the public command. Compare its result with the visible portal state. Add a lean end-to-end test only when it catches a meaningful failure at reasonable maintenance cost; add narrower tests for real regressions or identified fragile safety boundaries. No new automated test is required merely to accompany a change. Never validate a write using throwaway financial, tax, legal, or administrative data.
 
 ## Stop immediately when
 
@@ -92,7 +92,7 @@ A live validation must be explicitly enabled, make the minimum calls, and use th
 - a write response is ambiguous;
 - the browser and replayed request disagree.
 
-Return a typed, actionable error and preserve the evidence. Do not retry, broaden selectors, enumerate endpoints, or add a blind delay.
+Return a typed, actionable error and preserve only necessary evidence outside the repository under the security rules. Continue safe local diagnosis using [`OPERATIONS.md`](OPERATIONS.md). Do not retry, broaden selectors, enumerate endpoints, or add a blind delay.
 
 ## Retry policy
 

@@ -17,3 +17,6 @@
 ## Verification
 
 <!-- Commands run and observable results. Never include secrets or live data. -->
+<!-- For an operation change: state whether the public CLI was verified against live state, or what remains pending. -->
+<!-- Name the concrete failure prevented by each new test, or explain why no new test is useful. -->
+<!-- For a repair: describe the failed boundary and how the next agent can diagnose it without copying raw logs. -->

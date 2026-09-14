@@ -1,8 +1,8 @@
 # Portales
 
-Agent-friendly tools for safe, consistent interaction with web portals.
+The agent's maintained operations adapter for safe, consistent interaction with web portals.
 
-`portales` is a planned BipBop Labs TypeScript monorepo for integrations that do not have a dependable public API and therefore require browser automation, observed private requests, or both. The first intended service modules are:
+`portales` is a BipBop Labs TypeScript monorepo for integrations that do not have a dependable public API and therefore require browser automation, observed private requests, or both. Service scope includes:
 
 - `sii`: native Chilean SII authentication, RCV, and electronic-invoicing operations.
 - `sag`: the SAG digital entry declaration flow already proven through browser automation.
@@ -41,7 +41,17 @@ remain out of scope.
 
 This is a public repository. Only synthetic examples and fixtures may be committed. Data from users, clients, chats, documents, screenshots, local files, or live portal sessions is never repository material.
 
-New work starts with a real useful flow. Prefer one lean end-to-end test and add unit tests only for regressions or proven fragile boundaries.
+The agent owns the full loop: explore the existing code and real flow, run the operation, inspect failures, repair the adapter within repository conventions, update the observed contract, and verify the real result. Capabilities grow from actual use into reusable CLI commands. Follow [`docs/OPERATIONS.md`](docs/OPERATIONS.md) for diagnostics and repair with the tools currently available.
+
+New work starts with a real useful flow. Add tests only for useful public paths, actual regressions, or identified fragile boundaries. Zero new tests is valid; real portal verification remains the evidence of operational success.
+
+## Disclaimer
+
+Unofficial project. Not affiliated with, endorsed by, or supported by the Servicio de Impuestos Internos (SII), Banco de Crédito e Inversiones (BCI), or any other portal operator. Use it only with your own credentials and at your own risk; portal terms of service still apply.
+
+## License
+
+MIT, see [`LICENSE`](LICENSE). Portions of `services/sii` are derived from MIT-licensed work, see [`services/sii/THIRD_PARTY_LICENSE.md`](services/sii/THIRD_PARTY_LICENSE.md).
 
 ## Why the name
 

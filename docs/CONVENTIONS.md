@@ -117,7 +117,7 @@ Rules:
 - Reject unknown IDs locally before submission and point the error to the exact `options` command that resolves it.
 - `--help` names the discovery command beside every constrained argument.
 - Option discovery is read-only, JSON by default, contains no PII, and follows the normal authentication and pacing rules.
-- Tests prove that every constrained field has discovery coverage and that the command returns all synthetic fixture options.
+- When adding a discovery test, cover the useful public path and completeness of independently synthetic options. Do not generate a separate suite for every field.
 
 ## Errors
 
@@ -154,12 +154,13 @@ Configuration is not a substitute for design. Expose a rate or timeout only if o
 
 ## Testing
 
-- Unit and contract tests use fakes and sanitized fixtures.
+- Automated tests use independently authored synthetic data; create a fake or fixture only when a specific check needs it.
 - Default tests never open a browser, network connection, keyring, or production session.
-- Test every public result and typed error at the task boundary.
-- Test CLI STDOUT, STDERR, and exit codes.
+- Prefer one lean public-command test when it catches a meaningful failure. Check its output and exit behavior in that same test instead of duplicating coverage at every layer.
+- Add narrower tests for actual regressions or identified fragile boundaries. State the failure each new test prevents; do not require exhaustive result, error, or parser matrices.
+- Zero new tests is acceptable for changes without a useful automated assertion. Preserve checks for secrets, account scope, authentication limits, and single execution of mutations.
 - Live tests are separate, opt-in, serialized, minimal, and read-only unless a real required operation has explicit authorization.
-- A parser test includes at least: normal data, empty data, provider error, login-wall response, and changed shape.
+- Run the relevant existing checks once after the final change; broaden only for dependencies, failures, or an identified risk. Passing tests does not establish that a live portal operation works.
 
 ## Dependencies
 

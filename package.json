@@ -1,6 +1,7 @@
 {
   "name": "portales",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "bin": {
     "portales": "dist/apps/cli/src/main.js"
