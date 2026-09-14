@@ -4,6 +4,8 @@
 
 Make every portal operation easy for an agent to discover and hard to misuse. The stable unit is a **task**: one typed operation with a small input, a JSON-serializable result, an explicit effect, and all safety policy below its interface.
 
+The repository also holds the operational knowledge needed to maintain those tasks during use. The agent follows the execution and repair loop in [`OPERATIONS.md`](OPERATIONS.md), updates the adapter and dated contract when evidence changes, and verifies the original outcome. Add diagnostic machinery only where an actual failure reveals missing context; keep portal knowledge inside its service.
+
 ## Boundaries
 
 ```text

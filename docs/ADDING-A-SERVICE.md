@@ -65,7 +65,7 @@ The CLI command calls the task and nothing below it.
 
 ## 7. Test what matters
 
-Prefer one lean end-to-end test of the public command. Add unit tests only for real regressions or fragile pure boundaries discovered while exercising the flow. Login and mutation tests must still prove no automatic retry.
+Prefer one lean end-to-end test of the public command when it catches a meaningful failure. Add unit tests only for real regressions or fragile boundaries discovered while exercising the flow. Explain when no new automated test is warranted. Preserve checks proving authentication and mutations cannot retry automatically.
 
 ## 8. Validate through the public interface
 
@@ -76,6 +76,8 @@ Complete only when the public JSON result and live portal agree.
 ## 9. Update documentation
 
 Add the operation to the service catalog and document sensitive output fields. Update cross-repository conventions only if the new behavior applies to more than one service.
+
+Document how to locate existing diagnostics, distinguish likely failure boundaries, and safely verify a repair using `OPERATIONS.md`. State diagnostic limitations honestly; do not advertise unimplemented debug commands or logging.
 
 A short decision note is needed only for a cross-cutting, surprising, security-sensitive, or costly-to-reverse choice. Normal implementation choices belong in code comments and contracts.
 
