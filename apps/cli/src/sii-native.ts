@@ -17,6 +17,7 @@ import {
   type DteItem,
   type FormaPago,
 } from '../../../services/sii/src/tasks/dte.js';
+import { BTE_COMUNAS, bteEmit, bteEmitPreview, bteList, type BteEmitArgs } from '../../../services/sii/src/tasks/bte.js';
 import { createPortalesSiiRuntime, siiDocumentsDir } from '../../../services/sii/src/runtime.js';
 
 interface NativeSiiDependencies {
@@ -52,6 +53,45 @@ function positiveInteger(value: string | undefined, name: string): number | unde
     throw new PortalError('INVALID_INPUT', `${name} must be a positive integer.`);
   }
   return parsed;
+}
+
+function repeated(args: string[], name: string): string[] {
+  const values: string[] = [];
+  for (let value = option(args, name); value !== undefined; value = option(args, name)) values.push(value);
+  return values;
+}
+
+function bteArgs(args: string[]): BteEmitArgs {
+  const lineas = repeated(args, '--linea').map((value) => {
+    const i = value.indexOf(':');
+    const monto = Number(value.slice(0, i));
+    const glosa = value.slice(i + 1).trim();
+    if (i < 0 || !Number.isInteger(monto) || monto <= 0 || glosa === '') {
+      throw new PortalError('INVALID_INPUT', '--linea must be "<monto>:<glosa>".');
+    }
+    return { glosa, monto };
+  });
+  const retiene = (option(args, '--retiene') ?? 'receptor').toUpperCase();
+  if (retiene !== 'RECEPTOR' && retiene !== 'EMISOR') {
+    throw new PortalError('INVALID_INPUT', '--retiene must be receptor or emisor.');
+  }
+  const fecha = option(args, '--fecha');
+  const fechaMatch = fecha === undefined ? undefined : /^(\d{4})-(\d{2})-(\d{2})$/u.exec(fecha);
+  if (fechaMatch === null) throw new PortalError('INVALID_INPUT', '--fecha must be YYYY-MM-DD.');
+  const enviar = option(args, '--enviar');
+  return {
+    receptor: required(args, '--receptor'),
+    receptorNombre: required(args, '--nombre'),
+    receptorDomicilio: required(args, '--domicilio'),
+    region: positiveInteger(required(args, '--region'), '--region') ?? 0,
+    comuna: positiveInteger(required(args, '--comuna'), '--comuna') ?? 0,
+    lineas,
+    retiene,
+    ...(fechaMatch ? { fecha: { anio: Number(fechaMatch[1]), mes: Number(fechaMatch[2]), dia: Number(fechaMatch[3]) } } : {}),
+    ...(flag(args, '--sin-detalle') ? { mostrarDetalle: false } : {}),
+    ...(enviar ? { enviarA: enviar } : {}),
+    ...(flag(args, '--sin-copia') ? { copiaEmisor: false } : {}),
+  };
 }
 
 function done(args: string[]): void {
@@ -177,6 +217,30 @@ export async function runSiiNative(
     } else if (command === 'all') {
       done(args);
       result = await rcvListAll(runtime, { periodo, side, ...(rut ? { rut } : {}) });
+    }
+  } else if (section === 'bte' && command === 'list') {
+    const periodo = args.shift();
+    if (!periodo) throw new PortalError('INVALID_INPUT', 'BTE period is required.');
+    const side = flag(args, '--recibidas') ? 'RECIBIDAS' : 'EMITIDAS';
+    done(args);
+    result = await bteList(runtime, { periodo, side });
+  } else if (section === 'bte' && command === 'comunas') {
+    const region = positiveInteger(option(args, '--region'), '--region');
+    done(args);
+    result = region === undefined ? BTE_COMUNAS : (BTE_COMUNAS[region] ?? {});
+  } else if (section === 'bte' && command === 'emit') {
+    const confirm = option(args, '--confirm');
+    const input = bteArgs(args);
+    done(args);
+    if (confirm === undefined) {
+      // Preview by default: SII computes retención/líquido without issuing.
+      result = { emitida: false, ...await bteEmitPreview(runtime, input) };
+    } else {
+      const total = input.lineas.reduce((sum, linea) => sum + linea.monto, 0);
+      if (Number(confirm) !== total) {
+        throw new PortalError('INVALID_INPUT', `--confirm must equal the gross total (${String(total)}).`);
+      }
+      result = { emitida: true, ...await bteEmit(runtime, input) };
     }
   } else if (section === 'dte' && command === 'authorized') {
     const rut = args.shift();

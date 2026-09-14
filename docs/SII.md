@@ -11,6 +11,7 @@ Only the capabilities exercised by Portales are included:
 
 - explicit authentication and local session status/logout;
 - RCV summary, per-type list, and all-types list;
+- BTE/BHE monthly listing, emission preview, and confirmed emission;
 - DTE authorization lookup;
 - Portal MIPYME companies, invoice drafts, previews, emitted-document listing, and PDF download.
 
@@ -46,6 +47,24 @@ portales sii rcv all 2026-09 --profile default
 ```
 
 Add `--venta` for the sales register or `--rut <rut>` for an authorized represented entity.
+
+## Boletas de honorarios (BTE/BHE)
+
+Session-keyed: reads and issues only for the logged-in principal (no `--rut`).
+
+```bash
+portales sii bte list 2026-09 [--recibidas] --profile default
+portales sii bte comunas [--region 13]
+portales sii bte emit --receptor <rut> --nombre <nombre> --domicilio <dir> \
+  --region 13 --comuna 15103 --linea "<monto>:<glosa>" [--linea ...] \
+  [--retiene receptor|emisor] [--fecha YYYY-MM-DD] [--sin-detalle] \
+  [--enviar <email>] [--sin-copia] [--confirm <monto-total>]
+```
+
+`bte emit` without `--confirm` only previews (SII computes retención/líquido, nothing is issued).
+With `--confirm` equal to the gross total it **legally issues** the boleta and returns its
+código de barras and PDF URL. Emission is never retried. Email delivery via `--enviar` is
+best-effort upstream (response fields not yet live-verified).
 
 ## Electronic invoicing
 
