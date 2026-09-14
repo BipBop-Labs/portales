@@ -7,12 +7,13 @@ Portales gives agents a place to build, use, and improve their own tools for ext
 `portales` is a BipBop Labs TypeScript monorepo for integrations that do not have a dependable public API and therefore require browser automation, observed private requests, or both. Service scope includes:
 
 - `sii`: native Chilean SII authentication, RCV, and electronic-invoicing operations.
-- `sag`: the SAG digital entry declaration flow already proven through browser automation.
+- `sag`: live declaration choices, a private-input preview, and verified receipt downloads; automatic submission is not implemented.
 - `bci-pyme`: BCI's business banking portal.
 
 Service specifications:
 
 - [`sii`](docs/SII.md): native profile, RCV, and safe DTE invoicing surface.
+- [`sag`](services/sag/docs/service.md): public declaration options and dependent border-control/transport catalogs.
 - [`bci-pyme`](services/bci-pyme/docs/service.md): exact keyring namespace, authentication boundary, browser-session rules, and planned read-only calls.
 
 ## Setup
@@ -36,6 +37,14 @@ portales sii dte emitidos --empresa <rut> --profile default
 ```
 
 ## Status
+
+Discover SAG declaration choices without creating a declaration:
+
+```bash
+portales sag declaracion-jurada options
+portales sag declaracion-jurada preview --input <private-json-file>
+portales sag declaracion-jurada --help
+```
 
 The repository implements guarded BCI Pyme operations and native SII authentication,
 RCV reads, and safe DTE draft/read operations. SII invoice signing and legal issuance
