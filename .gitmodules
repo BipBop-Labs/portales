@@ -1,3 +1,0 @@
-[submodule "services/sii"]
-	path = services/sii
-	url = https://github.com/BipBop-Labs/sii.git
