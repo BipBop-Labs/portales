@@ -21,6 +21,14 @@ export const publicLoginUrl = 'https://www.bci.cl/corporativo/banco-en-linea/pym
 export const authenticatedShellUrl = 'https://bel.bci.cl/cl/bci/aplicaciones/contenidoLayoutOSSPyme.jsf';
 export const businessSelectorUrl = 'https://bel.bci.cl/cl/bci/aplicaciones/seguridad/autenticacion/vista/vistaSelectorConvenio.jsf';
 export const deviceOmitName = /^omitir(?: por ahora)?$/iu;
+const detailedWorkbookLabels = [
+  'Fecha de transacción',
+  'Código de transacción',
+  'Glosa detalle',
+  'Ingreso (+)',
+  'Egreso (-)',
+  'Saldo contable',
+] as const;
 
 /** Submits the observed native POST form once while preserving Playwright's navigation lifecycle. */
 export async function submitObservedLogin(control: Pick<Locator, 'click'>): Promise<void> {
@@ -226,22 +234,26 @@ export class PlaywrightBciPymePortal implements BciPymePortal {
   }
 
   async downloadCartola(selection: CartolaSelection) {
-    const { movements, business } = await this.openMovements(selection.businessId);
+    const { movements } = await this.openMovements(selection.businessId);
     const accounts = await this.currentAccounts(movements);
     if (accounts.length !== 1 || accounts[0]?.id !== selection.accountId) {
       throw new PortalError('REMOTE_STATE_AMBIGUOUS', 'The selected account is not the current discovered account.');
     }
-    const accountWidget = await requireUnique(
+    await requireUnique(
       movements.locator('fe-oss-widget-accounts-cartola').filter({ hasText: selection.accountId }),
       'selected account widget',
     );
-    const downloadButton = await requireUniqueVisible(
-      accountWidget.getByRole('button', { name: /Descargar/iu }),
-      'selected account download button',
-    );
+    const downloadButton = movements.getByRole('button', { name: /Descargar/iu }).first();
+    try {
+      await downloadButton.waitFor({ state: 'visible', timeout: 30_000 });
+    } catch {
+      throw new PortalError('PORTAL_CHANGED', 'Expected a visible movements download button.');
+    }
     await downloadButton.click();
-    const optionName = /Descargar excel detallado/iu;
-    const option = await requireUnique(movements.getByText(optionName), 'download option');
+    const option = await requireUniqueVisible(
+      movements.getByText(/Descargar excel detallado/iu),
+      'Excel detallado download option',
+    );
     const [download] = await Promise.all([
       this.page.waitForEvent('download', { timeout: 120_000 }),
       option.click(),
@@ -250,7 +262,7 @@ export class PlaywrightBciPymePortal implements BciPymePortal {
     const path = join(this.downloadDirectory, `cartola-${randomUUID()}.xlsx`);
     await download.saveAs(path);
     const mediaType: SupportedDownloadMediaType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-    return validateDownloadedFile(path, mediaType, business.label);
+    return validateDownloadedFile(path, mediaType, undefined, detailedWorkbookLabels);
   }
 }
 

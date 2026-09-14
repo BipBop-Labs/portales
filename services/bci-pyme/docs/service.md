@@ -82,6 +82,8 @@ Listing and download commands never perform implicit login.
 
 ## Browser session
 
+On Linux, every `portales bci-pyme ...` command transparently relaunches once under `xvfb-run -a` when no `DISPLAY` is available. Callers still use only the public `portales` interface; they must not prepend Xvfb manually or invoke compiled modules. Other services are not wrapped. Linux deployments that enable BCI Pyme must provide `xvfb-run` on `PATH`.
+
 The browser session is separate from the keyring item. It may contain cookies, CSRF values, device identifiers, and local storage, all of which are secrets.
 
 Store session state under a private service/profile-specific location with user-only permissions. Never combine BCI with another portal or organization in one browser profile. Session expiry returns `SESSION_EXPIRED`; it does not trigger login automatically.

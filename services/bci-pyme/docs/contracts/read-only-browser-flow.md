@@ -20,9 +20,11 @@
 6. Selecting one exact discovered business loads the shell dashboard in the `fe-oss-shell-dashboard` frame.
 7. `Mis Movimientos` loads the `fe-oss-shell-mov-cuenta` frame.
 8. The current account is identified from the account-cartola widget heading and must match an ID returned by account discovery.
-9. The first `Descargar` control opens the observed menu.
+9. The first visible `Descargar` control in the movements frame opens the observed menu. It is a sibling control, not a descendant of the account widget.
 10. Selecting `Descargar excel detallado` emits one browser download. PDF is not exposed because its contents cannot yet be tied back to the selected business with the same validation strength.
-11. The adapter saves the document under a random private filename and validates permissions, media signature, byte count, and SHA-256 digest.
+11. The adapter saves the document under a random private filename and validates permissions, ZIP CRC, XLSX structure, byte count, and SHA-256 digest. The detailed workbook does not carry the selected business label; business and account identity are therefore established from the authenticated UI before download, not inferred from workbook contents.
+
+The download control placement and identity boundary were re-observed live on 2026-09-14 after the prior widget-scoped selector failed. A successful export contained the expected detailed movement columns but no workbook-level legal-name header.
 
 The download exports the portal's current movements view. The observed interface did not present a date-range dialog, so the public input does not claim or accept a date range.
 

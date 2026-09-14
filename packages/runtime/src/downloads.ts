@@ -29,6 +29,7 @@ export async function validateDownloadedFile(
   path: string,
   mediaType: SupportedDownloadMediaType,
   expectedBusinessLabel?: string,
+  requiredWorkbookLabels: readonly string[] = [],
 ): Promise<FileDescriptor> {
   await chmod(path, 0o600);
   const bytes = await readFile(path);
@@ -38,7 +39,7 @@ export async function validateDownloadedFile(
     throw new DownloadValidationError('Downloaded content did not match its declared document type.');
   }
   if (mediaType.includes('spreadsheetml')) {
-    await validateWorkbook(bytes, expectedBusinessLabel);
+    await validateWorkbook(bytes, expectedBusinessLabel, requiredWorkbookLabels);
   }
   return {
     path,
@@ -52,7 +53,11 @@ function normalizeIdentity(value: string): string {
   return value.normalize('NFKD').replace(/[^a-z0-9]+/giu, '').toLowerCase();
 }
 
-async function validateWorkbook(bytes: Buffer, expectedBusinessLabel?: string): Promise<void> {
+async function validateWorkbook(
+  bytes: Buffer,
+  expectedBusinessLabel?: string,
+  requiredLabels: readonly string[] = [],
+): Promise<void> {
   let zip: JSZip;
   try {
     zip = await JSZip.loadAsync(bytes, { checkCRC32: true });
@@ -64,14 +69,24 @@ async function validateWorkbook(bytes: Buffer, expectedBusinessLabel?: string): 
   if (!required.every((name) => zip.file(name) !== null) || !hasWorksheet) {
     throw new DownloadValidationError('Downloaded archive is not an XLSX workbook.');
   }
+  let normalizedXml = '';
+  if (expectedBusinessLabel !== undefined || requiredLabels.length > 0) {
+    const xmlNames = Object.keys(zip.files).filter((name) => name.endsWith('.xml'));
+    const xml = (await Promise.all(xmlNames.map(async (name) => zip.file(name)?.async('string') ?? ''))).join('');
+    normalizedXml = normalizeIdentity(xml);
+    for (const label of requiredLabels) {
+      const marker = normalizeIdentity(label);
+      if (marker.length < 4 || !normalizedXml.includes(marker)) {
+        throw new DownloadValidationError('Downloaded workbook does not match the expected spreadsheet schema.');
+      }
+    }
+  }
   if (expectedBusinessLabel !== undefined) {
     const marker = normalizeIdentity(expectedBusinessLabel);
     if (marker.length < 4) {
       throw new DownloadValidationError('Expected business identity is not specific enough.');
     }
-    const xmlNames = Object.keys(zip.files).filter((name) => name.endsWith('.xml'));
-    const xml = (await Promise.all(xmlNames.map(async (name) => zip.file(name)?.async('string') ?? ''))).join('');
-    if (!normalizeIdentity(xml).includes(marker)) {
+    if (!normalizedXml.includes(marker)) {
       throw new DownloadValidationError('Downloaded workbook does not match the selected business.');
     }
   }
