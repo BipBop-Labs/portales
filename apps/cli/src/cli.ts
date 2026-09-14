@@ -8,6 +8,7 @@ import { listAccountOptions, listCartolaOptions } from '../../../services/bci-py
 interface CliDependencies {
   openSessionPortal(profile: string): Promise<BciPymePortal & { close?: () => Promise<void> }>;
   login(input: { profile: string }): Promise<unknown>;
+  runSii?: (args: string[]) => Promise<number>;
   stdout(value: string): void;
   stderr(value: string): void;
 }
@@ -48,6 +49,10 @@ async function readPrivateSelections(path: string): Promise<CartolaSelection[]> 
 export async function runCli(args: string[], dependencies: CliDependencies): Promise<number> {
   let portal: (BciPymePortal & { close?: () => Promise<void> }) | undefined;
   try {
+    if (args[0] === 'sii') {
+      if (!dependencies.runSii) throw new PortalError('PORTAL_CHANGED', 'The SII dependency is unavailable.');
+      return await dependencies.runSii(args.slice(1));
+    }
     if (args[0] !== 'bci-pyme') throw new PortalError('INVALID_INPUT', 'Unknown service.');
     const profile = option(args, '--profile');
     let result: unknown;

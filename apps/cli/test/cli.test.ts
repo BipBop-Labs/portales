@@ -5,6 +5,21 @@ import { describe, expect, it, vi } from 'vitest';
 import { runCli } from '../src/cli.js';
 
 describe('public CLI', () => {
+  it('delegates sii commands to the pinned fork without constructing a BCI portal', async () => {
+    const runSii = vi.fn().mockResolvedValue(0);
+    const openSessionPortal = vi.fn();
+    const login = vi.fn();
+
+    expect(await runCli(
+      ['sii', 'f29', 'status', '2026-08'],
+      { runSii, login, openSessionPortal, stdout: vi.fn(), stderr: vi.fn() },
+    )).toBe(0);
+
+    expect(runSii).toHaveBeenCalledWith(['f29', 'status', '2026-08']);
+    expect(openSessionPortal).not.toHaveBeenCalled();
+    expect(login).not.toHaveBeenCalled();
+  });
+
   it('dispatches explicit auth login without constructing a session portal', async () => {
     const writes: string[] = [];
     const login = vi.fn().mockResolvedValue({ profile: 'testing', authenticated: true });

@@ -4,13 +4,35 @@ Agent-friendly tools for safe, consistent interaction with web portals.
 
 `portales` is a planned BipBop Labs TypeScript monorepo for integrations that do not have a dependable public API and therefore require browser automation, observed private requests, or both. The first intended service modules are:
 
-- `sii`: Chile's Servicio de Impuestos Internos, informed by [`BipBop-Labs/sii`](https://github.com/BipBop-Labs/sii).
+- `sii`: Chile's Servicio de Impuestos Internos, provided by the pinned [`BipBop-Labs/sii`](https://github.com/BipBop-Labs/sii) submodule.
 - `sag`: the SAG digital entry declaration flow already proven through browser automation.
 - `bci-pyme`: BCI's business banking portal.
 
 Service specifications:
 
+- [`sii`](docs/SII.md): pinned-fork dependency, setup, update, and CLI delegation contract.
 - [`bci-pyme`](services/bci-pyme/docs/service.md): exact keyring namespace, authentication boundary, browser-session rules, and planned read-only calls.
+
+## Setup
+
+Clone with submodules and install both isolated toolchains:
+
+```bash
+git clone --recurse-submodules https://github.com/BipBop-Labs/portales.git
+cd portales
+npm install --include=dev
+npm run setup:sii
+npm run build
+```
+
+The SII command tree is available below the unified executable without being
+reimplemented by Portales:
+
+```bash
+portales sii --version
+portales sii auth status
+portales sii f29 status 2026-08
+```
 
 ## Status
 
