@@ -50,6 +50,8 @@ import type {
   TipoDte,
 } from '../portal/dte-mipyme.js';
 import type { AuditEntry, Runtime } from '../seams/index.js';
+import { fetchRecibidoPdf, fetchRecibidos } from '../portal/dte-recibidos.js';
+import type { DteRecibido, DteRecibidosFiltro } from '../portal/dte-recibidos.js';
 
 export type {
   DteEmitido,
@@ -671,6 +673,104 @@ export async function dteAuthorized(
     return res;
   } catch (e) {
     recordAudit(runtime, { action: 'dte_autorizados', result: 'failed', rut: rut.canonical });
+    throw e;
+  }
+}
+
+// --- DTE recibidos (MIPYME "Ver documentos recibidos", read-only — observed 2026-09-17) --------
+
+export type { DteRecibido, DteRecibidosFiltro } from '../portal/dte-recibidos.js';
+
+/** Received documents of one empresa (page 1 of the filtered listing; see `dte-recibidos.ts`). */
+export async function dteRecibidos(
+  runtime: Runtime,
+  args: { empresa: string; tipoDte?: number; emisor?: string; folio?: number; desde?: string; hasta?: string; tipoDoc?: number; pagina?: number },
+): Promise<{ empresa: DteEmpresa; documentos: DteRecibido[] }> {
+  const empresa = Rut.parse(args.empresa);
+  const tipoDte = assertTipo(args.tipoDte);
+  const emisor = args.emisor === undefined ? undefined : Rut.parse(args.emisor);
+  for (const [k, v] of [['desde', args.desde], ['hasta', args.hasta]] as const) {
+    if (v !== undefined && !ISO_DATE.test(v)) throw new ValidationError(`--${k} inválida: "${v}" (formato YYYY-MM-DD).`);
+  }
+  if (args.folio !== undefined && (!Number.isInteger(args.folio) || args.folio <= 0)) {
+    throw new ValidationError(`Folio inválido: "${args.folio}" (entero positivo).`);
+  }
+  const start = runtime.clock.now().getTime();
+  try {
+    const res = await withSession(runtime, async (session) => {
+      const emp = await resolveAndSelectEmpresa(session, empresa, tipoDte, () => runtime.clock.sleep(pacingMs()));
+      await runtime.clock.sleep(pacingMs());
+      const filtro: DteRecibidosFiltro = {
+        ...(emisor === undefined ? {} : { emisorBody: String(emisor.body) }),
+        ...(args.folio === undefined ? {} : { folio: args.folio }),
+        ...(args.desde === undefined ? {} : { desde: args.desde }),
+        ...(args.hasta === undefined ? {} : { hasta: args.hasta }),
+        ...(args.tipoDoc === undefined ? {} : { tipoDoc: args.tipoDoc }),
+        ...(args.pagina === undefined ? {} : { pagina: args.pagina }),
+      };
+      return { empresa: emp, documentos: await readOnlyRetry(runtime, () => fetchRecibidos(session, filtro)) };
+    });
+    audit(runtime, 'dte_recibidos', 'ok', { rut: empresa.canonical, count: res.documentos.length, durationMs: runtime.clock.now().getTime() - start });
+    return res;
+  } catch (e) {
+    audit(runtime, 'dte_recibidos', 'failed', { rut: empresa.canonical });
+    throw e;
+  }
+}
+
+/** A downloaded RECEIVED document — a DESCRIPTOR, never the bytes. */
+export interface DteRecibidoDoc {
+  readonly path: string;
+  readonly archivo: string;
+  readonly bytes: number;
+  readonly contentType: 'application/pdf';
+  readonly empresa: DteEmpresa;
+  readonly documento: DteRecibido;
+}
+
+/** Download one received document as PDF. The folio is resolved through the server-side
+ *  filtered listing; a folio shared by several emisores must be narrowed with `emisor`. */
+export async function dteRecibidoPdf(
+  runtime: Runtime,
+  args: { empresa: string; folio: number; emisor?: string; tipoDte?: number; directorio: string },
+): Promise<DteRecibidoDoc> {
+  const empresa = Rut.parse(args.empresa);
+  const tipoDte = assertTipo(args.tipoDte);
+  const emisor = args.emisor === undefined ? undefined : Rut.parse(args.emisor);
+  if (!Number.isInteger(args.folio) || args.folio <= 0) {
+    throw new ValidationError(`Folio inválido: "${args.folio}" (entero positivo).`);
+  }
+  const files = runtime.files;
+  if (!files) {
+    throw new DteError('Este runtime no tiene un FileSink configurado, así que no puede escribir el PDF. Usa `createNodeRuntime()` o inyecta `files`.');
+  }
+  const start = runtime.clock.now().getTime();
+  try {
+    const res = await withSession(runtime, async (session) => {
+      const emp = await resolveAndSelectEmpresa(session, empresa, tipoDte, () => runtime.clock.sleep(pacingMs()));
+      await runtime.clock.sleep(pacingMs());
+      const folio = args.folio;
+      const rows = (await readOnlyRetry(runtime, () => fetchRecibidos(session, {
+        folio, ...(emisor === undefined ? {} : { emisorBody: String(emisor.body) }),
+      }))).filter((d) => d.folio === folio && (emisor === undefined || (d.emisorRut ?? '').replace(/\./g, '') === emisor.canonical));
+      if (rows.length === 0) {
+        throw new DteError(`No se encontró un documento recibido con folio ${folio}${emisor ? ` del emisor ${emisor.formatted}` : ''} en ${emp.rut}. Revisa \`dte documentos list --direction received\`.`);
+      }
+      if (rows.length > 1) {
+        throw new ValidationError(`El folio ${folio} corresponde a ${rows.length} documentos recibidos de distintos emisores en ${emp.rut}; indica --emisor <rut>.`);
+      }
+      const doc = rows[0] as DteRecibido;
+      await runtime.clock.sleep(pacingMs());
+      const bytes = await fetchRecibidoPdf(session, doc.codigo);
+      const emisorBody = (doc.emisorRut ?? 'sin-emisor').replace(/[^0-9kK-]/g, '');
+      const archivo = `dte-recibido-${doc.folio ?? doc.codigo}-${emisorBody}-${empresa.canonical}-${doc.fecha ?? 'sin-fecha'}.pdf`;
+      const path = await files.write(args.directorio, archivo, bytes);
+      return { path, archivo, bytes: bytes.length, contentType: 'application/pdf' as const, empresa: emp, documento: doc };
+    });
+    audit(runtime, 'dte_recibido_pdf', 'ok', { rut: empresa.canonical, folio: res.documento.folio, bytes: res.bytes, durationMs: runtime.clock.now().getTime() - start });
+    return res;
+  } catch (e) {
+    audit(runtime, 'dte_recibido_pdf', 'failed', { rut: empresa.canonical, folio: args.folio });
     throw e;
   }
 }

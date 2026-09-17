@@ -110,7 +110,9 @@ export async function publishArtifactFile(temporaryPath: string, directory: stri
     await unlink(temporaryPath);
   } catch (error: unknown) {
     if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
-      throw new PortalError('INTERNAL', `An artifact already exists at ${finalPath}; refusing to overwrite.`);
+      throw invalidInput(`An artifact already exists at ${finalPath}; refusing to overwrite.`, [{ field: '--output', expected: 'a destination without an existing file of the same name' }], {
+        nextAction: 'Use portales artifacts list to find the existing artifact, or choose another private destination.', nextCommand: 'portales artifacts list',
+      });
     }
     if ((error as NodeJS.ErrnoException).code !== 'EXDEV') throw error;
     // Different filesystem: copy without overwriting, then remove the staged copy.

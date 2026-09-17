@@ -19,4 +19,4 @@ Compound reads get `prepare`: one session discovers dependent options, resolves 
 
 ## Consequences
 
-Snapshots contain only IDs and labels already returned by discovery commands, never cookies. Direct flags and `--input` are mutually exclusive. The SII `--rut` override is a deprecated alias of `--empresa` and prints a JSON notice on STDERR; principal-only operations report `supportedScopes` and the authenticated principal.
+Snapshots contain only IDs and labels already returned by discovery commands, never cookies. Direct flags and `--input` are mutually exclusive. SII entity-scoped operations take `--empresa` only (the former `--rut` override was removed rather than aliased); principal-only operations report `supportedScopes` and the authenticated principal.

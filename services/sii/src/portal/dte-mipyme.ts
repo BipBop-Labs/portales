@@ -28,7 +28,7 @@ import { DteError } from '../errors/index.js';
 import { Rut } from '../rut/index.js';
 import type { PortalSession, PublicResponse } from '../seams/index.js';
 
-const CGI = HOSTS.mipeCgi;
+export const CGI = HOSTS.mipeCgi;
 const SEL_EMPRESA_URL = `${CGI}/mipeSelEmpresa.cgi`;
 const FORM_URL = `${CGI}/mipeGenFacEx.cgi`;
 const GRABA_URL = `${CGI}/mipeGrabaBorrador.cgi`;
@@ -923,7 +923,7 @@ export async function fetchBorradores(session: PortalSession): Promise<DteBorrad
 /** Strip tags from one HTML cell and normalise whitespace. `&nbsp;` counts as whitespace here:
  *  a cell holding only a spacer entity is a BLANK cell, and the callers below decide what a blank
  *  means positionally — they must not receive the literal string `&nbsp;` as a value (#92). */
-const cellText = (html: string): string =>
+export const cellText = (html: string): string =>
   unescapeHtml(html.replace(/<[^>]*>/g, ' '))
     .replace(/&nbsp;/gi, ' ')
     .replace(/\s+/g, ' ')
@@ -932,11 +932,11 @@ const cellText = (html: string): string =>
 /** A blank cell is a MISSING value, not an absent column. Deliberately a twin of `cell()` in
  *  `dte-public.ts`: both are portal modules, and ADR-007 forbids one importing the other's
  *  internals — sharing would mean a new leaf, which this fix does not warrant. */
-const cellValue = (v: string | undefined): string | null =>
+export const cellValue = (v: string | undefined): string | null =>
   v === undefined || v === '' ? null : v;
 
 /** Same, for a numeric cell: SII pads amounts with separators, and a blank reads as absent. */
-const cellNumber = (v: string | undefined): number | null => {
+export const cellNumber = (v: string | undefined): number | null => {
   const d = (v ?? '').replace(/[^\d-]/g, '');
   return d === '' ? null : Number(d);
 };

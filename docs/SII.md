@@ -65,7 +65,7 @@ SII domain errors are converted at the command boundary (`services/sii/src/porta
 
 ## Entity scope
 
-Body-RUT operations (RCV) select a represented empresa with `--empresa <rut>`; the value must be in the operable set cached at login (see `auth status`). `--rut` still works as a deprecated alias and prints a one-line JSON notice on STDERR (`notice: deprecated-option`). MIPYME operations were already empresa-keyed and keep `--empresa`.
+Body-RUT operations (RCV) select a represented empresa with `--empresa <rut>`; the value must be in the operable set cached at login (see `auth status`). `--empresa` is the only entity-selection option; `--rut` is rejected as an unknown option. MIPYME operations are empresa-keyed and use the same `--empresa`.
 
 Principal-only operations (`bte list`, `bte emit`) return `supportedScopes: ["principal"]` and `principal: { rut, accountType }`. Under a representing operate pointer they fail locally with `INVALID_INPUT` (field `scope`) before any session is opened.
 
@@ -77,7 +77,7 @@ portales sii rcv list 2026-09 --tipo 34 --profile default
 portales sii rcv all 2026-09 --profile default
 ```
 
-Add `--venta` for the sales register or `--empresa <rut>` for an authorized represented entity (`--rut` is a deprecated alias).
+Add `--venta` for the sales register or `--empresa <rut>` for an authorized represented entity.
 
 ## Boletas de honorarios (BTE/BHE)
 
@@ -99,20 +99,22 @@ best-effort upstream (response fields not yet live-verified).
 
 ## DTE documents
 
-Symmetric document interface (2026-09-17):
+Symmetric document interface (observed 2026-09-17, contract in `services/sii/docs/contracts/dte-recibidos.md`):
 
 ```bash
-portales sii dte documentos list --empresa <rut> --direction issued [--desde --hasta --tipo-doc --pagina] --profile default
-portales sii dte documentos list --empresa <rut> --direction received --periodo YYYY-MM --profile default
+portales sii dte documentos list --empresa <rut> --direction issued [--folio --desde --hasta --tipo-doc --pagina] --profile default
+portales sii dte documentos list --empresa <rut> --direction received [--emisor <rut> --folio --desde --hasta --tipo-doc] --profile default
 portales sii dte documentos download --empresa <rut> --direction issued --folio <n> [--output <dir> | --destination <alias>] --profile default
-portales sii dte documentos download --empresa <rut> --direction received --folio <n>   # UNSUPPORTED_CAPABILITY
+portales sii dte documentos download --empresa <rut> --direction received --folio <n> [--emisor <rut>] [--output <dir> | --destination <alias>] --profile default
 ```
 
-- `issued` uses the MIPYME emitidos listing and PDF servlet already observed (`dte emitidos` / `dte pdf` remain as aliases).
-- `received` listing uses the official RCV purchase register (`rcv all` with `COMPRA`): metadata only, one period at a time.
-- `received` download returns a typed `UNSUPPORTED_CAPABILITY` error. Evidence reviewed 2026-09-17: `services/sii/src/portal/dte-mipyme.ts` only implements `fetchEmitidas`/`fetchEmitidaPdf` (issuer side, `DHDR_CODIGO` keyed); `services/sii/src/portal/rcv.ts` returns register rows without document links; the only "recibidas" route in the tree is boletas de honorarios (`services/sii/src/portal/bte.ts`, `TMBCOC_InformeMensualBheRec.cgi`), not DTE. No received-DTE PDF/XML route has been observed, so none is guessed. Implementing it requires observing the real flow first (`docs/RESEARCH-FIRST.md`).
+- `issued` uses the MIPYME emitidos listing and PDF servlet (`dte emitidos` / `dte pdf` remain as aliases).
+- `received` uses the MIPYME "Ver documentos recibidos" listing (`mipeAdminDocsRcp.cgi`, the sibling of the emitidos listing) and its per-document PDF (`mipeShowPdf.cgi?CODIGO=`). Rows carry `codigo`, `emisorRut`, `emisorNombre`, `tipoDteDesc`, `folio`, `fecha`, `monto`, `estado`. Only page 1 of a filtered listing is read: the portal gates paging and its CSV export behind a reCAPTCHA, so narrow with `--folio`, `--emisor`, `--desde`/`--hasta` instead of walking pages.
+- A folio shared by several emisores must be narrowed with `--emisor`; otherwise the download fails locally with `INVALID_INPUT` before any PDF request.
+- The MIPYME portal is operated by the PERSONA that is "usuario autorizado" of the empresa, not by the empresa's own account: a session logged in as the empresa gets `CONTRACT_MISMATCH` ("sin opciones") from the chooser. Use the persona profile and `--empresa`.
+- Received-document metadata is also available from the official RCV purchase register (`rcv all` with `COMPRA`), which carries no document links.
 
-Every download returns the complete artifact descriptor (`artifactId`, `sha256`, `byteCount`, `mediaType`, `path`, `identifiers {empresa, folio}`, `documentType: dte-pdf`, `extractedAt`, `coveredPeriod: null`, `validationChecks`) plus `documento` and `empresa`. Without `--output`/`--destination` the PDF stays in the profile's private documents directory; with either it is validated first and then hard-linked into the private destination (never overwritten). Destination aliases live in `~/.config/portales/destinations.json`, never in this repository.
+Every download returns the complete artifact descriptor (`artifactId`, `sha256`, `byteCount`, `mediaType`, `path`, `identifiers`, `documentType`, `extractedAt`, `coveredPeriod: null`, `validationChecks`) plus `documento` and `empresa`. Identifiers are `{empresa, folio}` for issued (`documentType: dte-pdf`) and `{empresa, emisor, folio}` for received (`documentType: dte-received-pdf`). Received PDFs are additionally checked with `pdftotext` when it is installed: the folio and both RUTs (emisor and empresa) must appear in the text (`folio-in-text`, `ruts-in-text`), otherwise `DOWNLOAD_INVALID`. Without `--output`/`--destination` the PDF stays in the profile's private documents directory; with either it is validated first and then hard-linked (or copied without overwrite) into the private destination. Destination aliases live in `~/.config/portales/destinations.json`, never in this repository.
 
 ## Electronic invoicing
 
@@ -133,7 +135,7 @@ Invoice JSON files must be private regular files with mode `0600`. Draft deletio
 
 Use the public CLI against the real portal with the minimum calls. The maintained unit tests cover only regressions already encountered, notably the Portales keyring namespace. Do not mirror the upstream package's test suite or add fake infrastructure preemptively.
 
-Live verification 2026-09-17 (read-only, one call each, real portal): `auth status`, `auth login` (keyring, headless), `rcv summary` (compra, venta, `--empresa`), `rcv list --tipo`, `rcv all`, `bte list` (emitidas, recibidas, scope metadata present), `bte comunas`, `dte authorized`, `dte empresas`, `dte emitidos`, `dte documentos list --direction issued|received`, `dte borrador list`, `dte documentos download --direction issued --output <private dir>` (artifact descriptor, `artifacts verify` passed), and `documentos download --direction received` (typed `UNSUPPORTED_CAPABILITY`). Every result carried the versioned envelope and one `runId` across STDERR stages. Not live-verified: `auth logout`, writes (`bte emit`, `borrador save/delete`, `dte preview`), and the breaker trip path (would require a deliberately failed login).
+Live verification 2026-09-17 (read-only, one call each, real portal): `auth status`, `auth login` (keyring, headless), `rcv summary` (compra, venta, `--empresa`), `rcv list --tipo`, `rcv all`, `bte list` (emitidas, recibidas, scope metadata present), `bte comunas`, `dte authorized`, `dte empresas`, `dte emitidos`, `dte documentos list --direction issued|received`, `dte borrador list`, `dte documentos download --direction issued --output <private dir>` and `--direction received --output <private dir>` (artifact descriptors, `artifacts verify` passed, received text checks passed). Every result carried the versioned envelope and one `runId` across STDERR stages. Not live-verified: `auth logout`, writes (`bte emit`, `borrador save/delete`, `dte preview`), and the breaker trip path (would require a deliberately failed login).
 
 Two defects were found and fixed during that verification: a missing Playwright Chromium surfaced as `INTERNAL` (now classified `BROWSER_LAUNCH_FAILED` through the shared classifier), and a cross-filesystem `--output` failed at the verify stage (the shared publish helper now copies without overwrite when hard links are impossible).
 

@@ -1,6 +1,8 @@
 import { constants } from 'node:fs';
 import { open } from 'node:fs/promises';
 import { basename } from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { PortalError, invalidInput } from '../../../../packages/runtime/src/errors.js';
 import { publishArtifactFile, resolveDestination } from '../../../../packages/runtime/src/destinations.js';
 import { validateDownloadedFile } from '../../../../packages/runtime/src/downloads.js';
@@ -15,7 +17,7 @@ import { authStatus, logout } from '../../../../services/sii/src/tasks/auth.js';
 import { rcvList, rcvListAll, rcvSummary } from '../../../../services/sii/src/tasks/rcv.js';
 import { BTE_COMUNAS, bteEmit, bteEmitPreview, bteList, type BteEmitArgs } from '../../../../services/sii/src/tasks/bte.js';
 import {
-  MAX_ITEMS, dteAuthorized, dteBorradorDelete, dteBorradorList, dteBorradorSave, dteEmitidos, dteEmpresas, dtePdf, dtePreviewPdf,
+  MAX_ITEMS, dteAuthorized, dteBorradorDelete, dteBorradorList, dteBorradorSave, dteEmitidos, dteEmpresas, dtePdf, dtePreviewPdf, dteRecibidoPdf, dteRecibidos,
   type DteBorradorArgs, type DteItem, type FormaPago,
 } from '../../../../services/sii/src/tasks/dte.js';
 
@@ -25,7 +27,7 @@ type Context = RunContext<CliDependencies>;
 const sessionErrors = ['NOT_AUTHENTICATED', 'SESSION_EXPIRED', 'RATE_LIMITED', 'PROVIDER_ERROR', 'CONTRACT_MISMATCH', 'BROWSER_LAUNCH_FAILED', 'RUN_LOCKED'] as const;
 const EMPRESAS = 'portales sii dte empresas --profile <profile>';
 const empresaOption: ArgumentSpec = { name: 'empresa', kind: 'string', required: true, description: 'Empresa RUT authorized for the MIPYME portal.', discoverWith: EMPRESAS };
-const scopeOption: ArgumentSpec = { name: 'empresa', kind: 'string', description: 'Operate as this represented empresa RUT (must be in the operable set). --rut is a deprecated alias.', deprecatedAlias: 'rut', discoverWith: 'portales sii auth status --profile <profile>' };
+const scopeOption: ArgumentSpec = { name: 'empresa', kind: 'string', description: 'Operate as this represented empresa RUT (must be in the operable set).', discoverWith: 'portales sii auth status --profile <profile>' };
 const periodoPositional: ArgumentSpec = { name: 'periodo', kind: 'period', required: true, description: 'Tax period YYYY-MM.' };
 const ventaOption: ArgumentSpec = { name: 'venta', kind: 'boolean', description: 'Sales register instead of purchases.' };
 const outputOptions: ArgumentSpec[] = [
@@ -55,12 +57,9 @@ function flag(input: ParsedInput, name: string): boolean {
   return input.options[name] === true;
 }
 
-/** Entity scope for body-RUT operations: `--empresa` (or deprecated `--rut`), with a one-line notice. */
-function scope(input: ParsedInput, context: Context): { rut?: string } {
+/** Entity scope for body-RUT operations: `--empresa` selects a represented entity from the operable set. */
+function scope(input: ParsedInput): { rut?: string } {
   const empresa = str(input, 'empresa');
-  if (input.options.empresaDeprecatedAlias === 'rut') {
-    context.stderr(JSON.stringify({ schemaVersion: '1', runId: context.runId, service: 'sii', operation: context.operation, notice: 'deprecated-option', option: '--rut', replacement: '--empresa' }));
-  }
   return empresa === undefined ? {} : { rut: empresa };
 }
 
@@ -217,6 +216,52 @@ async function downloadIssued(input: ParsedInput, context: Context, folio: numbe
   return { ...artifact, destination: target.source, documento: doc.documento, empresa: doc.empresa };
 }
 
+const RECEIVED_LIST = 'portales sii dte documentos list --empresa <rut> --direction received --profile <profile>';
+
+/** Text-level checks on a received PDF when pdftotext is available: folio and both RUTs (emisor, empresa) must appear. */
+async function receivedTextChecks(path: string, folio: number, ruts: string[]): Promise<string[]> {
+  let text: string;
+  try {
+    ({ stdout: text } = await promisify(execFile)('pdftotext', ['-layout', path, '-'], { timeout: 15_000, maxBuffer: 4_000_000 }));
+  } catch {
+    return [];
+  }
+  const normalized = text.replace(/\./gu, '').toUpperCase();
+  const checks: string[] = [];
+  if (new RegExp(`(?:N[°º]|FOLIO)\\s*${String(folio)}\\b`, 'u').test(text)) checks.push('folio-in-text');
+  if (ruts.every((rut) => normalized.includes(rut.replace(/\./gu, '').toUpperCase()))) checks.push('ruts-in-text');
+  if (checks.length < 2) {
+    throw new PortalError('DOWNLOAD_INVALID', `The received PDF text does not carry the expected folio and RUTs (${checks.join(', ') || 'none'} matched).`, {
+      recovery: { stage: 'verify', lastCompletedStage: 'download', contractRef: `${SII_DOCS}#dte-documents`, nextAction: 'Do not trust the file. Compare the listing row with the PDF; if the layout changed, observe and update the contract.' },
+    });
+  }
+  return checks;
+}
+
+/** Downloads one received DTE PDF, validates signature and text, records the artifact, and places it per destination policy. */
+async function downloadReceived(input: ParsedInput, context: Context) {
+  const profile = profileOf(input);
+  const empresa = str(input, 'empresa') ?? '';
+  const folio = num(input, 'folio') ?? 0;
+  const emisor = str(input, 'emisor');
+  const output = str(input, 'output'); const destination = str(input, 'destination');
+  const staging = siiDocumentsDir(profile);
+  const doc = await withScope(context, profile, 'dte-documents', (runtime) => dteRecibidoPdf(runtime, { empresa, folio, ...(emisor === undefined ? {} : { emisor }), directorio: staging }), RECEIVED_LIST);
+  context.stage('download');
+  const validated = await validateDownloadedFile(doc.path, 'application/pdf');
+  context.stage('verify');
+  const emisorRut = doc.documento.emisorRut ?? '';
+  const textChecks = await receivedTextChecks(doc.path, folio, [emisorRut, doc.empresa.rut]);
+  const identifiers = { empresa: doc.empresa.rut, emisor: emisorRut.replace(/[^0-9kK-]/gu, ''), folio: String(folio) };
+  const target = await resolveDestination({ service: 'sii', profile, documentType: 'dte-received-pdf', identifiers, ...(output === undefined ? {} : { output }), ...(destination === undefined ? {} : { destination }) });
+  const finalPath = target.directory === staging ? doc.path : await publishArtifactFile(doc.path, target.directory, basename(doc.path));
+  const artifact = await context.recordArtifact({
+    identifiers, documentType: 'dte-received-pdf', extractedAt: new Date().toISOString(), coveredPeriod: null,
+    byteCount: validated.byteCount, mediaType: validated.mediaType, sha256: validated.sha256, validationChecks: ['private-permissions', 'signature', ...textChecks], path: finalPath,
+  });
+  return { ...artifact, destination: target.source, documento: doc.documento, empresa: doc.empresa };
+}
+
 function auth(path: string[], summary: string, extra: Partial<Spec>, run: Spec['run']): Spec {
   return { service: 'sii', path, summary, effect: 'read', auth: 'public', browser: 'none', profile: 'optional', output: { description: '' }, errors: [], contractRef: `${SII_DOCS}#authentication`, ...extra, run };
 }
@@ -249,7 +294,7 @@ const commands: Spec[] = [
     run: (input, context) => {
       const periodo = input.positionals.periodo as string;
       const side = flag(input, 'venta') ? 'VENTA' : 'COMPRA';
-      const rut = scope(input, context);
+      const rut = scope(input);
       return withScope<unknown>(context, profileOf(input), 'rcv-purchases-and-sales', (runtime) => {
         if (action === 'summary') return rcvSummary(runtime, { periodo, side, ...rut });
         if (action === 'all') return rcvListAll(runtime, { periodo, side, ...rut });
@@ -314,33 +359,31 @@ const commands: Spec[] = [
     run: (input, context) => withScope(context, profileOf(input), 'electronic-invoicing', (runtime) => { const tipoDte = num(input, 'tipo'); return dteEmpresas(runtime, tipoDte === undefined ? {} : { tipoDte }); }),
   },
   {
-    service: 'sii', path: ['dte', 'documentos', 'list'], summary: 'List DTE documents of one empresa: --direction issued (MIPYME emitidos) or received (RCV compra register).',
-    description: 'Received documents come from the official RCV purchase register and need --periodo; they are metadata only.',
+    service: 'sii', path: ['dte', 'documentos', 'list'], summary: 'List DTE documents of one empresa in the MIPYME portal: --direction issued (emitidos) or received (recibidos).',
+    description: 'Received rows carry codigo, emisorRut, folio, fecha, monto and estado; use --emisor to narrow a folio shared by several emisores. Only page 1 per filter is read (portal paging is reCAPTCHA-gated); narrow with --folio, --emisor, --desde/--hasta.',
     effect: 'read', auth: 'session', browser: 'headless', profile: 'optional',
-    options: [empresaOption, { name: 'direction', kind: 'enum', values: ['issued', 'received'], required: true, description: 'Document direction.' }, { name: 'periodo', kind: 'period', description: 'Period YYYY-MM (required for received).' }, ...emitidosFilters],
-    output: { description: '{ direction, empresa, documentos } or RCV compra register' }, errors: ['INVALID_INPUT', ...sessionErrors], contractRef: `${SII_DOCS}#dte-documents`, discoverWith: [EMPRESAS],
+    options: [empresaOption, { name: 'direction', kind: 'enum', values: ['issued', 'received'], required: true, description: 'Document direction.' }, { name: 'emisor', kind: 'string', description: 'Emisor RUT filter (received only).' }, ...emitidosFilters],
+    output: { description: '{ direction, source, empresa, documentos }' }, errors: ['INVALID_INPUT', ...sessionErrors], contractRef: `${SII_DOCS}#dte-documents`, discoverWith: [EMPRESAS],
     run: (input, context) => {
-      const direction = str(input, 'direction');
-      if (direction === 'received') {
-        const periodo = str(input, 'periodo');
-        if (periodo === undefined) throw invalidInput('--periodo is required for received documents (RCV compra register).', [{ field: '--periodo', expected: 'YYYY-MM' }]);
-        return withScope(context, profileOf(input), 'dte-documents', async (runtime) => ({ direction: 'received', source: 'rcv-compra', ...await rcvListAll(runtime, { periodo, side: 'COMPRA', rut: str(input, 'empresa') ?? '' }) }));
+      if (str(input, 'direction') === 'received') {
+        const emisor = str(input, 'emisor');
+        const args = emitidosArgs(input);
+        if (args.estado !== undefined || args.receptor !== undefined) throw invalidInput('--estado and --receptor apply to issued documents only.', [{ field: '--estado/--receptor', expected: 'absent for --direction received' }]);
+        const common = { empresa: args.empresa, ...(args.tipoDoc === undefined ? {} : { tipoDoc: args.tipoDoc }), ...(args.folio === undefined ? {} : { folio: args.folio }), ...(args.desde === undefined ? {} : { desde: args.desde }), ...(args.hasta === undefined ? {} : { hasta: args.hasta }), ...(args.pagina === undefined ? {} : { pagina: args.pagina }) };
+        return withScope(context, profileOf(input), 'dte-documents', async (runtime) => ({ direction: 'received', source: 'mipyme-recibidos', ...await dteRecibidos(runtime, { ...common, ...(emisor === undefined ? {} : { emisor }) }) }), EMPRESAS);
       }
       return withScope(context, profileOf(input), 'dte-documents', async (runtime) => ({ direction: 'issued', source: 'mipyme-emitidos', ...await dteEmitidos(runtime, emitidosArgs(input)) }), EMPRESAS);
     },
   },
   {
-    service: 'sii', path: ['dte', 'documentos', 'download'], summary: 'Download one DTE PDF by folio: --direction issued is supported; received returns a typed capability response.',
+    service: 'sii', path: ['dte', 'documentos', 'download'], summary: 'Download one DTE PDF by folio, issued or received, and return its artifact descriptor.',
     effect: 'read', auth: 'session', browser: 'headless', profile: 'optional',
-    options: [empresaOption, { name: 'direction', kind: 'enum', values: ['issued', 'received'], required: true, description: 'Document direction.' }, { name: 'folio', kind: 'integer', required: true, description: 'Folio.', discoverWith: 'portales sii dte documentos list --empresa <rut> --direction issued --profile <profile>' }, ...outputOptions],
-    output: { description: 'Artifact descriptor (artifactId, sha256, byteCount, mediaType, path, identifiers, documentType, extractedAt, coveredPeriod, validationChecks) + documento' },
-    errors: ['INVALID_INPUT', 'UNSUPPORTED_CAPABILITY', 'DOWNLOAD_INVALID', ...sessionErrors], contractRef: `${SII_DOCS}#dte-documents`, discoverWith: [EMPRESAS],
+    options: [empresaOption, { name: 'direction', kind: 'enum', values: ['issued', 'received'], required: true, description: 'Document direction.' }, { name: 'folio', kind: 'integer', required: true, description: 'Folio.', discoverWith: 'portales sii dte documentos list --empresa <rut> --direction <direction> --profile <profile>' }, { name: 'emisor', kind: 'string', description: 'Emisor RUT (received only; required when several emisores share the folio).', discoverWith: RECEIVED_LIST }, ...outputOptions],
+    output: { description: 'Artifact descriptor (artifactId, sha256, byteCount, mediaType, path, identifiers, documentType, extractedAt, coveredPeriod, validationChecks) + documento + empresa' },
+    errors: ['INVALID_INPUT', 'DOWNLOAD_INVALID', ...sessionErrors], contractRef: `${SII_DOCS}#dte-documents`, discoverWith: [EMPRESAS, RECEIVED_LIST],
     run: (input, context) => {
-      if (str(input, 'direction') === 'received') {
-        throw new PortalError('UNSUPPORTED_CAPABILITY', 'Downloading received DTE PDF/XML is not implemented: no safe portal route has been observed yet.', {
-          recovery: { contractRef: `${SII_DOCS}#dte-documents`, nextAction: 'Observe the received-document route in a real browser per docs/RESEARCH-FIRST.md and record its contract before implementing. Received metadata is available via dte documentos list --direction received.', nextCommand: `portales sii dte documentos list --empresa <rut> --direction received --periodo <YYYY-MM> --profile ${profileOf(input)}` },
-        });
-      }
+      if (str(input, 'direction') === 'received') return downloadReceived(input, context);
+      if (str(input, 'emisor') !== undefined) throw invalidInput('--emisor applies to received documents only.', [{ field: '--emisor', expected: 'absent for --direction issued' }]);
       return downloadIssued(input, context, num(input, 'folio') ?? 0);
     },
   },
