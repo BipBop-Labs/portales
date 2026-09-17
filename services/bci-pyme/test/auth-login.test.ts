@@ -25,7 +25,7 @@ describe('auth.login risk controls', () => {
     await expect(loginBciPyme(
       { profile: 'synthetic-profile' },
       { secrets: { read }, breaker, portal: { authenticate } },
-    )).resolves.toEqual({ profile: 'synthetic-profile', authenticated: true });
+    )).resolves.toEqual({ profile: 'synthetic-profile', authenticated: true, lastAuthenticatedStage: 'authenticated-shell' });
 
     expect(read).toHaveBeenCalledOnce();
     expect(read).toHaveBeenCalledWith({

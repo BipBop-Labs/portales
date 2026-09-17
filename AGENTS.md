@@ -18,8 +18,9 @@ Help the next agent learn from this work. Preserve useful discoveries about how 
 4. `docs/SECURITY.md`
 5. `docs/KEYRING.md`
 6. `docs/ADDING-A-SERVICE.md`
-7. The target service's `services/<service>/docs/service.md` and contracts, when they exist
+7. The target service's `services/<service>/docs/service.md` and contracts, when they exist; `portales catalog --json` and `portales describe <service> <resource> <action> --json` are the authoritative command contracts
 8. `docs/OPERATIONS.md` for execution, diagnostics, and repair
+9. `docs/CODE-GUIDE.md` for the shape of a correct change, and `docs/decisions/` for why the cross-cutting rules exist
 
 For design work, use the `ousterhout-software-design` skill from [`BipBop-Labs/bipbop-skills`](https://github.com/BipBop-Labs/bipbop-skills). Prefer deep modules, information hiding, obvious interfaces, and pulling unavoidable complexity below the task boundary.
 
@@ -37,7 +38,7 @@ For design work, use the `ousterhout-software-design` skill from [`BipBop-Labs/b
 - Tests never touch a production portal or the real keyring by default.
 - Never copy data supplied by a user, a live portal, chat, email, document, screenshot, or local account into this repository. This includes examples, fixtures, snapshots, traces, issues, comments, and commit messages.
 - Create examples and fixtures from scratch with obviously synthetic identities and values. Never make a fixture by partially masking live data. Remove cookies, RUTs, account numbers, names, addresses, client names, emails, phone numbers, amounts, document contents, and hidden fields that can identify an account.
-- If the portal behaves differently from the recorded contract, stop with a `PORTAL_CHANGED` error. Do not add retries.
+- If the portal behaves differently from the recorded contract, stop with a `CONTRACT_MISMATCH` error that names the smallest structural diff. Do not add retries, delays, or broader selectors. Repair through the loop: `observe` → proposed contract diff → agent review → local tests → one safe live verification → dated contract update. Never reserve `CONTRACT_MISMATCH` for local, browser, transport, or provider failures; those have their own codes.
 
 ## Mandatory public-repository gate
 
@@ -55,7 +56,7 @@ Completion means the staged tree contains no user, client, or live-account data 
 
 Prioritize the operation needed now, the smallest safe repair, and evidence that it works in the real environment. Do not add unrelated features, speculative extensibility, or test infrastructure while fixing an operation.
 
-When a command fails, follow `docs/OPERATIONS.md`: inspect the existing error and local evidence, identify the failed boundary, observe changed portal behavior when needed, repair the adapter, and verify through the public CLI. A stop condition stops portal execution, not safe local diagnosis. Resume remote work only when its safety boundary permits it.
+When a command fails, follow `docs/OPERATIONS.md`: read the error envelope's `stage`, `nextCommand`, and `contractRef`; run `portales runs show <run-id>` and `portales doctor`; identify the failed boundary; observe changed portal behavior with the read-only `observe` command when needed; repair the adapter and its contract fingerprint; and verify through the public CLI. A stop condition stops portal execution, not safe local diagnosis. Resume remote work only when its safety boundary permits it.
 
 Make failures diagnosable with bounded, allowlisted context and a concrete next step. Keep operational logs outside the repository. Record reusable structural findings in the service contract, never account data or raw logs.
 

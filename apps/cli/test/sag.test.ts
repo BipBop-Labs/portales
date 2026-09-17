@@ -32,7 +32,7 @@ describe('SAG public CLI', () => {
     const dependencies = { stdout, stderr, login, openSessionPortal };
     expect(await runCli(['sag', 'declaracion-jurada', 'options'], dependencies)).toBe(0);
     expect(stdout).toHaveBeenCalledOnce();
-    const result: unknown = JSON.parse(String(stdout.mock.calls[0]?.[0]));
+    const result: unknown = (JSON.parse(String(stdout.mock.calls[0]?.[0])) as { result: unknown }).result;
     expect(result).toMatchObject({ catalogs: [
       { field: 'nationality' }, { field: 'origin-country' }, { field: 'gender' },
       { field: 'travel-document' }, { field: 'entry-mode' },
@@ -46,7 +46,8 @@ describe('SAG public CLI', () => {
     ] });
     stdout.mockClear();
     expect(await runCli(['sag', 'declaracion-jurada', 'options', 'transport-type', '--border-control', '908'], dependencies)).toBe(0);
-    expect(stdout).toHaveBeenCalledExactlyOnceWith('{"field":"transport-type","dependsOn":{"borderControl":"908"},"options":[{"id":"906","label":"Synthetic transport A","aliases":[]}]}\n');
+    expect(stdout).toHaveBeenCalledOnce();
+    expect(JSON.parse(String(stdout.mock.calls[0]?.[0]))).toMatchObject({ schemaVersion: '1', service: 'sag', operation: 'declaracion-jurada.options', result: { field: 'transport-type', dependsOn: { borderControl: '908' }, options: [{ id: '906', label: 'Synthetic transport A', aliases: [] }] } });
     vi.mocked(readSagCatalogs).mockClear();
     stdout.mockClear();
     for (const args of [

@@ -38,7 +38,7 @@ export function runWithVirtualDisplayIfNeeded(
   const env = options.env ?? process.env;
   const platform = options.platform ?? process.platform;
   if ((args[1] === 'auth' && args[2] === 'setup') || args[0] !== 'bci-pyme' || platform !== 'linux'
-    || env.PORTALES_XVFB_ACTIVE === '1') return null;
+    || args.includes('--help') || env.PORTALES_XVFB_ACTIVE === '1') return null;
 
   const spawn = options.spawn ?? nodeSpawn;
   const executable = options.executable ?? process.execPath;
@@ -78,12 +78,18 @@ export function runWithVirtualDisplayIfNeeded(
       resolve(code);
     };
     child.once('error', () => {
-      stderr(`${JSON.stringify({ error: {
-        code: 'PORTAL_CHANGED',
-        message: 'The operation could not be completed safely.',
+      stderr(`${JSON.stringify({ schemaVersion: '1', service: 'bci-pyme', operation: args.slice(1, 3).join('.'), runId: null, error: {
+        code: 'BROWSER_LAUNCH_FAILED',
+        message: 'The virtual display (xvfb-run) could not be started.',
         retryable: false,
+        reason: 'browser-launch-failed',
+        nextAction: 'Install xvfb-run or check Chrome availability with portales doctor.',
+        nextCommand: 'portales doctor bci-pyme --json',
+        safeToRetry: true,
+        loginAttempted: false,
+        remoteMutationPossible: false,
       } })}\n`);
-      finish(7);
+      finish(1);
     });
     child.once('exit', (code, signal) => {
       finish(code ?? (signal ? 128 + constants.signals[signal] : 0));

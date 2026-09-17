@@ -1,5 +1,7 @@
 # Finalization and PDF receipt — observed 2026-09-14
 
+Machine-checkable twin: [`receipt.json`](receipt.json); validate with `portales contract validate`.
+
 The existing reviewed draft was finalized once after explicit confirmation of
 the truthful declaration. Accepting the checked oath dialog made one
 `PUT /declaracionJurada/<draft-folio>` request. Its successful JSON response had

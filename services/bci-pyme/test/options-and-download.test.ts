@@ -30,6 +30,7 @@ describe('selector discovery', () => {
         { id: 'account-synthetic-a', label: 'Cuenta Sintética Uno', aliases: [] },
         { id: 'account-synthetic-b', label: 'Cuenta Sintética Dos', aliases: [] },
       ],
+      source: 'live', contractVersion: '2026-09-17', freshness: 'discovered-this-run', observedAt: expect.any(String) as string,
     });
     expect(portal.discoverAccounts).toHaveBeenCalledWith('business-synthetic-a');
   });

@@ -18,14 +18,27 @@ Service specifications:
 
 ## Setup
 
-Install the single npm toolchain:
+One supported installation path:
 
 ```bash
 git clone https://github.com/BipBop-Labs/portales.git
 cd portales
-npm install --include=dev
-npm run build
+./scripts/install.sh          # npm ci, npm run build, symlink ~/.local/bin/portales
+portales doctor --json        # local readiness: build, Chromium, Xvfb, pdftotext, keyring, permissions
 ```
+
+Update with `npm run update` (`git pull --ff-only && npm ci && npm run build`). Portales never updates itself during a portal operation; `portales version --json` and `doctor` report a stale build.
+
+Discover capabilities without a profile or a portal:
+
+```bash
+portales --help
+portales sii --help
+portales catalog --json
+portales describe bci-pyme cartolas download --json
+```
+
+Every result is a versioned envelope (`schemaVersion`, `service`, `operation`, `runId`, `result`); errors carry a typed code, the failed stage, `nextCommand`, and `contractRef`. Inspect any run afterwards with `portales runs show <run-id>` and downloads with `portales artifacts list`.
 
 The native SII service is available through the unified executable:
 

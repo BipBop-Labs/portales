@@ -12,10 +12,11 @@
     "services/*"
   ],
   "scripts": {
-    "build": "tsc -b",
+    "build": "tsc -b && node scripts/write-build-info.mjs",
     "lint": "eslint .",
-    "test": "vitest run --exclude 'dist/**'",
-    "typecheck": "tsc -b --pretty false"
+    "test": "vitest run",
+    "typecheck": "tsc -b --pretty false",
+    "update": "git pull --ff-only && npm ci && npm run build"
   },
   "devDependencies": {
     "@eslint/js": "^9.35.0",
@@ -29,5 +30,6 @@
     "jszip": "^3.10.1",
     "playwright": "^1.55.0",
     "zod": "^4.4.3"
-  }
+  },
+  "version": "0.1.0"
 }

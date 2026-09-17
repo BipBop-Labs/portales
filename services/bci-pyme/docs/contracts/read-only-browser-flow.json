@@ -1,0 +1,90 @@
+{
+  "schemaVersion": "1",
+  "service": "bci-pyme",
+  "operations": ["businesses.list", "accounts.options", "cartolas.download", "observe", "verify"],
+  "observedAt": "2026-09-17",
+  "explanation": "read-only-browser-flow.md",
+  "effect": "read",
+  "pageStates": {
+    "login-page": {
+      "description": "Public login page: one RUT input, one password input, one native submit in a top-level POST form.",
+      "kind": "login-page",
+      "routeFragments": ["/corporativo/banco-en-linea/pyme", "/seguridad/loginNoSesion.jsf"],
+      "readinessMarkers": [{ "css": "#rut_aux" }],
+      "controls": [
+        { "css": "#rut_aux", "expectedVisibleCount": 1 },
+        { "css": "input[type='password']", "expectedVisibleCount": 1 },
+        { "role": "button", "name": "Ingresar", "expectedVisibleCount": { "min": 0, "max": 1 } }
+      ]
+    },
+    "business-selector": {
+      "description": "Authenticated convention selector: one table row per business; the visible convention link is the business ID and the last cell its label.",
+      "kind": "authenticated-shell",
+      "routeFragments": ["/seguridad/autenticacion/vista/vistaSelectorConvenio.jsf"],
+      "readinessMarkers": [{ "css": "tr:has(a[id*='linkConvenio'])" }],
+      "controls": [
+        { "css": "tr:has(a[id*='linkConvenio'])", "expectedVisibleCount": { "min": 1 } },
+        { "text": "Algo salió mal", "expectedVisibleCount": 0 }
+      ]
+    },
+    "provider-error": {
+      "description": "System-error page served with HTTP 200 at the selector route.",
+      "kind": "provider-error",
+      "routeFragments": ["/seguridad/autenticacion/vista/vistaSelectorConvenio.jsf"],
+      "controls": [{ "text": "Algo salió mal", "expectedVisibleCount": 1 }]
+    },
+    "dashboard": {
+      "description": "Shell dashboard of the selected business inside the fe-oss-shell-dashboard frame.",
+      "kind": "authenticated-shell",
+      "frameNames": ["fe-oss-shell-dashboard"],
+      "readinessMarkers": [{ "text": "Mis Movimientos" }],
+      "controls": [{ "text": "Mis Movimientos", "expectedVisibleCount": { "min": 1 } }]
+    },
+    "movements": {
+      "description": "Movements view inside fe-oss-shell-mov-cuenta: exactly one account widget heading and a sibling download control whose accessible name is Descargar followed by an icon-font glyph.",
+      "kind": "result",
+      "frameNames": ["fe-oss-shell-mov-cuenta"],
+      "readinessMarkers": [{ "css": "fe-oss-widget-accounts-cartola h1" }],
+      "controls": [
+        { "css": "fe-oss-widget-accounts-cartola h1", "expectedVisibleCount": 1 },
+        { "role": "button", "name": "Descargar", "exact": false, "expectedVisibleCount": { "min": 1 } }
+      ]
+    },
+    "download-menu": {
+      "description": "Menu opened by the first visible Descargar control; exactly one Excel detallado option.",
+      "kind": "result",
+      "frameNames": ["fe-oss-shell-mov-cuenta"],
+      "controls": [{ "text": "Descargar excel detallado", "expectedVisibleCount": 1 }]
+    }
+  },
+  "flow": [
+    { "step": "goto", "destination": "business-selector" },
+    { "step": "expect-state", "state": "business-selector" },
+    { "step": "read", "what": "business-rows" },
+    { "step": "click", "css": "a[id*='linkConvenio']", "index": "selected" },
+    { "step": "expect-frame", "frame": "fe-oss-shell-dashboard" },
+    { "step": "click", "text": "Mis Movimientos", "frame": "fe-oss-shell-dashboard" },
+    { "step": "expect-frame", "frame": "fe-oss-shell-mov-cuenta" },
+    { "step": "read", "what": "current-accounts" },
+    { "step": "click", "role": "button", "name": "Descargar", "exact": false, "frame": "fe-oss-shell-mov-cuenta" },
+    { "step": "expect-state", "state": "download-menu" },
+    { "step": "expect-download" }
+  ],
+  "successConditions": [
+    "businesses.list: at least one business row with non-empty unique ID and label",
+    "accounts.options: exactly one account heading matching 7-20 digits inside the movements frame",
+    "cartolas.download: one browser download event whose file passes signature, ZIP CRC, XLSX structure and detailed-column checks"
+  ],
+  "stopConditions": [
+    "login rejection or ambiguity before acceptance",
+    "CAPTCHA, MFA, Turnstile, rate limiting, or account block",
+    "system-error page at the selector route (provider error, not a missing row)",
+    "missing or duplicate business rows or IDs",
+    "selected business not present in current discovery",
+    "missing dashboard or movements frame",
+    "current account not matching the exact discovered account ID",
+    "missing or duplicate download option",
+    "missing download event or invalid document signature"
+  ],
+  "supportedBranches": ["single current account per business", "excel-detallado document type only", "no date-range dialog"]
+}

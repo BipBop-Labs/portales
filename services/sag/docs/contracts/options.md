@@ -1,5 +1,7 @@
 # Public catalog discovery — observed 2026-09-14
 
+Machine-checkable twin: [`options.json`](options.json); validate with `portales contract validate`.
+
 ## Evidence and boundary
 
 Headed browser navigation to `https://dj.sag.gob.cl/declaracion-jurada` showed

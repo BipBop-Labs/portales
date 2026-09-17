@@ -1,8 +1,9 @@
 # BCI Pyme read-only browser flow
 
-- Observation date: 2026-09-14
+- Observation date: 2026-09-17 (download-control accessible name; flow otherwise as observed 2026-09-14)
 - Live validation: authenticated browser flow completed
 - Effect: read-only discovery and document download
+- Machine-checkable twin: [`read-only-browser-flow.json`](read-only-browser-flow.json) (page states, step list, stop conditions); `auth.login` uses [`auth-login.json`](auth-login.json). Validate with `portales contract validate`; observe live structure with `portales bci-pyme observe <operation> --profile <name>`.
 
 ## Observed flow
 
@@ -20,7 +21,7 @@
 6. Selecting one exact discovered business loads the shell dashboard in the `fe-oss-shell-dashboard` frame.
 7. `Mis Movimientos` loads the `fe-oss-shell-mov-cuenta` frame.
 8. The current account is identified from the account-cartola widget heading and must match an ID returned by account discovery.
-9. The first visible `Descargar` control in the movements frame opens the observed menu. It is a sibling control, not a descendant of the account widget.
+9. The first visible `Descargar` control in the movements frame opens the observed menu. It is a sibling control, not a descendant of the account widget. Its accessible name is `Descargar` followed by a space and an icon-font glyph (a private-use code point rendered as the dropdown arrow), so the contract records the name with `exact: false`; the adapter matches it as a substring.
 10. Selecting `Descargar excel detallado` emits one browser download. PDF is not exposed because its contents cannot yet be tied back to the selected business with the same validation strength.
 11. The adapter saves the document under a random private filename and validates permissions, ZIP CRC, XLSX structure, byte count, and SHA-256 digest. The detailed workbook does not carry the selected business label; business and account identity are therefore established from the authenticated UI before download, not inferred from workbook contents.
 
@@ -130,3 +131,41 @@ was needed after preserving the authenticated state.
 
 On Linux the public CLI now uses headed Chrome on Xvfb even with an existing desktop
 display. This keeps normal browser rendering while making browser windows invisible.
+
+## 2026-09-17 classification before parsing
+
+The adapter now classifies the page against the JSON contract before reporting a
+missing row or control. A system-error page at the selector route returns
+`PROVIDER_ERROR`; the expired-session route or `Ingresar` button returns
+`SESSION_EXPIRED`; a structure that differs from the recorded state returns
+`CONTRACT_MISMATCH` with the smallest diff (for example, expected at least one
+visible business row, observed zero) and `nextCommand` pointing at observe mode; a
+matching structure whose readiness marker never appears returns `READINESS_TIMEOUT`.
+The declarative step list in the JSON `flow` mirrors the code path in
+`playwright-portal.ts`; the executor in `src/portal/flows/executor.ts` interprets
+it for observation and future refactors. The read paths (`discoverBusinesses`,
+`openBusiness`, `downloadCartola`) still run their original code because moving
+them onto the executor would have changed the exact waits and locators observed on
+2026-09-14; migrate them only after a live observation confirms equivalence.
+
+## 2026-09-17 download-control name is not an exact match
+
+First live exercise of `accounts.options` after classification-before-parsing failed with
+`CONTRACT_MISMATCH: expected at least 1 visible button "Descargar", observed 0` while the
+account heading was present. `observe accounts.options` captured the movements frame: the
+value-stripped aria snapshot shows one visible button whose accessible name is `Descargar`,
+a space, and U+E5CF (an icon-font ligature glyph). The 2026-09-14 JSON transcribed the prose
+name `Descargar`, which the classifier matched exactly, while the download code has always
+located the control with a substring regex. Portal unchanged; contract too strict.
+
+Repair: the control schema accepts `exact: false` for a role/name whose observed accessible
+name embeds volatile icon text; the `movements` state and its `click` step record it. This is
+a recorded fact, not a broadened selector: `expectedVisibleCount` stays at least 1 and the
+name must still contain `Descargar`. Distinguish this case from a missing control by reading
+the aria snapshot in `observed.json`: a renamed or removed control shows no `button` line
+containing the name at all.
+
+Method note: `observe` must never assert the state it is capturing. It previously reused the
+enforcing `openMovements` path and therefore failed with the same mismatch it was meant to
+document; it now navigates without classification and captures the dashboard before the
+movements click replaces that frame.

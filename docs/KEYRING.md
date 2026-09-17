@@ -51,6 +51,15 @@ The runtime must use a Secret Service library or a subprocess API that captures 
 
 The read capability cannot create, replace, enumerate, or delete secrets. Secret writes belong only to the interactive setup path.
 
+## Namespaces in use
+
+| Service | `service` attribute | Bundle |
+| --- | --- | --- |
+| `bci-pyme` | `cl.bipbop.portales.bci` | `{ "version": 1, "rut", "password" }` |
+| `sii` | `cl.bipbop.portales.sii` | `{ "version": 1, "rut", "clave" }` |
+
+`portales doctor --json` reports whether `secret-tool` is installed and whether a Secret Service provider answers on the session bus (gnome-keyring, or KWallet with its Secret Service compatibility enabled). It never reads a bundle. `portales <service> auth status` reports local session presence and the login breaker without touching the keyring.
+
 ## Availability and unlocking
 
 The host is responsible for starting and unlocking Secret Service before a login command. Portales may report only:

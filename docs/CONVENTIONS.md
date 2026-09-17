@@ -34,42 +34,106 @@ Do not return an `ok` boolean around successful data merely because errors exist
 
 ## CLI
 
-Canonical shape:
+Canonical shape (updated 2026-09-17):
 
 ```text
 portales <service> <resource> <action> [arguments]
-portales <service> auth login --profile <name>
+portales <service> auth setup|status|login|logout --profile <name>
+portales <service> auth breaker status --profile <name>
 ```
+
+Global commands never take a profile or contact a portal:
+
+```text
+portales --help | portales <service> --help | portales <service> <resource> --help
+portales catalog --json                      every service, command, effect, auth, arguments, errors
+portales describe <service> <resource> <action> --json
+portales version --json                      package version, commit, build time, checkout, stale status
+portales doctor [service] --profile <name>   local readiness checks only
+portales runs list | runs show <run-id>
+portales artifacts list | latest | show <id> | verify <id>
+portales contract check <run-id>
+```
+
+Every command is declared once in the task registry (`packages/runtime/src/registry.ts`); help, catalog, describe, argument validation, and dispatch derive from that declaration. Do not hand-write help text or duplicate argument parsing.
 
 Rules:
 
-- JSON is the default on STDOUT.
-- `--human` enables a human renderer without changing the task.
-- Diagnostics, progress, and active-account headers go to STDERR.
-- A command computes one result and emits it once.
-- Errors use a stable JSON object on STDERR when not in human mode:
+- JSON is the default on STDOUT. `--json` is accepted everywhere and changes nothing; `--human` pretty-prints without changing the task.
+- A command computes one result and emits it once, wrapped in the versioned envelope below.
+- Diagnostics, lifecycle events, and errors go to STDERR as JSON lines.
+- `--profile <name>` selects the keyring account and private state; `--input <path>` reads a private (0600) JSON file for batches or sensitive payloads; simple single-item reads take direct flags instead.
+- `--output <dir>` or `--destination <alias>` places a verified artifact directly in a private directory outside any checkout; the default isolates by service, profile, document type, and every selected identifier.
+- `prepare` validates dependent options once and returns a normalized intent plus a fingerprint (and, where implemented, a short-lived snapshot id) that the executing command requires through `--confirm` or `--snapshot`.
+- `--confirm <value>` is operation-specific (fingerprint, id, or amount), never a boolean.
+
+### Result envelope
 
 ```json
 {
+  "schemaVersion": "1",
+  "service": "bci-pyme",
+  "operation": "businesses.list",
+  "runId": "run_20260917120000_0a1b2c3d",
+  "browserMode": "headed-xvfb",
+  "result": { }
+}
+```
+
+`browserMode` is one of `headed-xvfb`, `headed-desktop`, `headless`, `none`.
+
+### Error envelope (STDERR)
+
+```json
+{
+  "schemaVersion": "1",
+  "service": "bci-pyme",
+  "operation": "cartolas.download",
+  "runId": "run_20260917120000_0a1b2c3d",
   "error": {
-    "code": "SESSION_EXPIRED",
-    "message": "The session expired. Log in again.",
-    "retryable": false
+    "code": "CONTRACT_MISMATCH",
+    "message": "Expected exactly one visible download control.",
+    "retryable": false,
+    "stage": "navigate",
+    "reason": "contract-mismatch",
+    "lastCompletedStage": "session-check",
+    "nextAction": "Do not broaden selectors or retry. Observe the operation and propose a contract diff.",
+    "nextCommand": "portales bci-pyme observe cartolas.download --profile default",
+    "contractRef": "services/bci-pyme/docs/contracts/read-only-browser-flow.md#observed-flow",
+    "contractVersion": "2026-09-14",
+    "safeToRetry": false,
+    "loginAttempted": false,
+    "remoteMutationPossible": false,
+    "validation": [{ "field": "--business-id", "expected": "discovered business ID", "discoverWith": "portales bci-pyme businesses list --profile default" }]
   }
 }
 ```
 
-Suggested exit codes:
+`reason`, `stage`, and `nextAction` are static tokens or sentences, never portal text. `validation` appears only on `INVALID_INPUT` and names the exact discovery command. `activeRunId` appears on `RUN_LOCKED`.
+
+### Lifecycle events (STDERR JSONL)
+
+Every service command emits one line per stage, all sharing the run's `runId`:
+
+```json
+{"schemaVersion":"1","runId":"run_…","service":"bci-pyme","operation":"cartolas.download","stage":"navigate","at":"2026-09-17T12:00:01.000Z","elapsedMs":1200,"browserMode":"headed-xvfb"}
+```
+
+Stages are exactly `preflight`, `session-check`, `navigate`, `parse`, `download`, `verify`, then `completed` or `failed` (with the error code as `detail`). Task-specific progress uses the same shape with a static `detail`. Global commands emit no events.
+
+### Exit codes
 
 - `0`: success
-- `1`: unexpected/internal failure
-- `2`: invalid input
+- `1`: unexpected/internal failure, browser launch failure, stale build
+- `2`: invalid input, missing local dependency, expired or stale snapshot, unsupported capability
 - `3`: not authenticated or session expired
-- `4`: login failed or additional user authentication required
+- `4`: login failed, additional authentication required, credentials or keyring problem
 - `5`: authorization denied
-- `6`: rate limited or account blocked
-- `7`: portal contract changed
+- `6`: rate limited or account blocked (including a tripped login breaker)
+- `7`: contract mismatch, download validation failure, ambiguous remote state
 - `8`: confirmation required or mismatched
+- `9`: provider error page or readiness timeout
+- `10`: another run holds the service/profile lock
 
 Do not use an exit code to claim a write succeeded. Verify live state first.
 
@@ -121,21 +185,32 @@ Rules:
 
 ## Errors
 
-Use a small cross-service set where semantics are shared:
+One cross-service taxonomy (`packages/runtime/src/errors.ts`). Every code carries default recovery metadata; tasks refine `stage`, `reason`, `nextCommand`, and `contractRef`.
 
-- `INVALID_INPUT`
-- `NOT_AUTHENTICATED`
-- `SESSION_EXPIRED`
-- `LOGIN_FAILED`
-- `AUTHORIZATION_DENIED`
-- `ADDITIONAL_AUTH_REQUIRED`
-- `RATE_LIMITED`
-- `ACCOUNT_BLOCKED`
-- `PORTAL_CHANGED`
-- `CONFIRMATION_REQUIRED`
-- `REMOTE_STATE_AMBIGUOUS`
+| Code | Meaning |
+| --- | --- |
+| `INVALID_INPUT` | Local input problem; `validation[]` names field, constraint, and discovery command. |
+| `CONFIRMATION_REQUIRED` | Missing or mismatched operation-specific `--confirm`. |
+| `CREDENTIALS_NOT_CONFIGURED`, `CREDENTIALS_INVALID` | Keyring bundle missing or malformed. |
+| `KEYRING_LOCKED`, `KEYRING_UNAVAILABLE` | Secret Service denied or unreachable. |
+| `LOGIN_FAILED`, `ADDITIONAL_AUTH_REQUIRED` | Explicit login stopped; never retried automatically. |
+| `NOT_AUTHENTICATED`, `SESSION_EXPIRED` | No usable session; run the explicit login. |
+| `AUTHORIZATION_DENIED` | The account lacks permission. |
+| `RATE_LIMITED`, `ACCOUNT_BLOCKED` | Provider-side stop, including a tripped login breaker. |
+| `LOCAL_DEPENDENCY_MISSING` | Chrome, Xvfb, pdftotext, or another local tool is absent. |
+| `BROWSER_LAUNCH_FAILED` | The browser or virtual display could not start. |
+| `PROVIDER_ERROR` | The portal served an error page or was unreachable. |
+| `READINESS_TIMEOUT` | The expected page state did not appear in time. |
+| `CONTRACT_MISMATCH` | The page structure differs from the dated contract; `PORTAL_CHANGED` is a legacy alias. |
+| `DOWNLOAD_INVALID` | Downloaded bytes failed signature, structure, or identity validation. |
+| `REMOTE_STATE_AMBIGUOUS` | A write may have happened; reconcile with a read, never resubmit. |
+| `RUN_LOCKED` | Another run holds this service/profile; `activeRunId` names it. |
+| `SNAPSHOT_EXPIRED`, `SNAPSHOT_STALE` | A prepare snapshot is too old or the portal/account state changed. |
+| `UNSUPPORTED_CAPABILITY` | The operation exists in the catalog but is not implemented for this branch. |
+| `STALE_BUILD` | The executable does not match the checkout. |
+| `INTERNAL` | Unexpected failure; the message is static and the cause stays in the private run record. |
 
-Provider messages may be attached after redaction. Preserve an authoritative Spanish portal message when translation would make it less useful. Do not label a deterministic portal change as retryable.
+Provider messages may be attached after redaction. Preserve an authoritative Spanish portal message when translation would make it less useful. Never label a deterministic portal change as retryable, and never report `CONTRACT_MISMATCH` for a local, transport, or provider failure.
 
 ## Writes
 

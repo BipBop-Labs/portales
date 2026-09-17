@@ -1,0 +1,28 @@
+{
+  "schemaVersion": "1",
+  "service": "sag",
+  "operations": ["declaracion-jurada.preview"],
+  "observedAt": "2026-09-14",
+  "explanation": "declaration.md",
+  "effect": "read",
+  "pageStates": {
+    "identification": {
+      "description": "Identification screen: names, surnames, email, gender select, minors-luggage choice.",
+      "kind": "result",
+      "controls": [{ "css": "ion-select[formcontrolname='generoId']", "expectedVisibleCount": 1 }]
+    },
+    "travel": {
+      "description": "Travel screen: document type, document number, origin, entry mode, border control, transport, date.",
+      "kind": "result",
+      "controls": [
+        { "css": "ion-input[formcontrolname='numeroDocumento']", "expectedVisibleCount": 1 },
+        { "css": "ion-item#seleccionar-pais-origen", "expectedVisibleCount": 1 },
+        { "css": "ion-item#seleccionar-control", "expectedVisibleCount": 1 },
+        { "css": "ion-select[formcontrolname='tipoTransporteId']", "expectedVisibleCount": 1 }
+      ]
+    }
+  },
+  "successConditions": ["preview validates every choice against live catalogs without creating or advancing a declaration"],
+  "stopConditions": ["ClaveÚnica branch", "minors luggage", "non-Chilean document", "any write request"],
+  "supportedBranches": ["Chilean adult with Chilean identity document, no ClaveÚnica, SAG-only control"]
+}

@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { chmod, readFile, stat } from 'node:fs/promises';
 import JSZip from 'jszip';
+import { PortalError } from './errors.js';
 
 export type SupportedDownloadMediaType =
   | 'application/pdf'
@@ -13,9 +14,11 @@ export interface FileDescriptor {
   sha256: string;
 }
 
-class DownloadValidationError extends Error {
-  readonly code = 'PORTAL_CHANGED';
-  readonly retryable = false;
+
+class DownloadValidationError extends PortalError {
+  constructor(message: string) {
+    super('DOWNLOAD_INVALID', message, { recovery: { stage: 'verify', lastCompletedStage: 'download' } });
+  }
 }
 
 const signatures: Record<SupportedDownloadMediaType, Buffer> = {

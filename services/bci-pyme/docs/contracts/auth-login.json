@@ -1,0 +1,47 @@
+{
+  "schemaVersion": "1",
+  "service": "bci-pyme",
+  "operations": ["auth.login"],
+  "observedAt": "2026-09-14",
+  "explanation": "read-only-browser-flow.md",
+  "effect": "read",
+  "pageStates": {
+    "login-page": {
+      "description": "Public login page with one visible RUT input, one visible password input, and one native submit.",
+      "kind": "login-page",
+      "routeFragments": ["/corporativo/banco-en-linea/pyme"],
+      "readinessMarkers": [{ "css": "#rut_aux" }],
+      "controls": [
+        { "css": "#rut_aux", "expectedVisibleCount": 1 },
+        { "css": "input[type='password']", "expectedVisibleCount": 1 }
+      ]
+    },
+    "device-offer": {
+      "description": "Optional device-registration offer after acceptance; only the Omitir / Omitir por ahora control is ever used.",
+      "kind": "authenticated-shell",
+      "controls": [{ "role": "button", "name": "Omitir por ahora", "expectedVisibleCount": { "min": 0, "max": 1 } }]
+    },
+    "relay": {
+      "description": "Empty LoginJSFGenerico relay; neither success nor failure until the selector probe.",
+      "kind": "loading",
+      "routeFragments": ["/LoginJSFGenerico"]
+    },
+    "business-selector": {
+      "description": "Acceptance evidence: at least one business row on the convention selector.",
+      "kind": "authenticated-shell",
+      "routeFragments": ["/seguridad/autenticacion/vista/vistaSelectorConvenio.jsf"],
+      "controls": [{ "css": "tr:has(a[id*='linkConvenio'])", "expectedVisibleCount": { "min": 1 } }]
+    }
+  },
+  "flow": [
+    { "step": "goto", "destination": "public-login" },
+    { "step": "expect-state", "state": "login-page" },
+    { "step": "fill", "css": "#rut_aux", "from": "rut" },
+    { "step": "fill", "css": "input[type='password']", "from": "password" },
+    { "step": "click", "role": "button", "name": "INGRESAR" },
+    { "step": "expect-state", "state": "business-selector" }
+  ],
+  "successConditions": ["device offer, convention selector rows, dashboard frame, or a unique Mis Movimientos control establishes acceptance"],
+  "stopConditions": ["rejection or ambiguity before acceptance trips the profile breaker", "CAPTCHA, MFA, Turnstile, rate limit, or block", "device registration is never activated"],
+  "supportedBranches": ["single attempt", "Omitir / Omitir por ahora only"]
+}

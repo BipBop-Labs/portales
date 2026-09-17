@@ -1,0 +1,70 @@
+{
+  "schemaVersion": "1",
+  "service": "bci-pyme",
+  "operations": ["destinatarios.list", "destinatarios.options", "destinatarios.prepare", "destinatarios.create", "destinatarios.authorize", "destinatarios.delete"],
+  "observedAt": "2026-09-14",
+  "explanation": "destinatarios.md",
+  "effect": "write",
+  "pageStates": {
+    "business-selector": {
+      "description": "Authenticated convention selector with one row per business.",
+      "kind": "authenticated-shell",
+      "routeFragments": ["/seguridad/autenticacion/vista/vistaSelectorConvenio.jsf"],
+      "controls": [{ "css": "tr:has(a[id*='linkConvenio'])", "expectedVisibleCount": { "min": 1 } }]
+    },
+    "dashboard": {
+      "description": "Business dashboard exposing Mis Destinatarios.",
+      "kind": "authenticated-shell",
+      "frameNames": ["fe-oss-shell-dashboard"],
+      "controls": [{ "text": "Mis Destinatarios", "expectedVisibleCount": 1 }]
+    },
+    "recipients-listing": {
+      "description": "Recipient listing frame with Autorizados and Por autorizar tabs.",
+      "kind": "result",
+      "frameNames": ["fe-destinatarios-pyme"],
+      "routeFragments": ["/nuevaWeb/fe-destinatarios-pyme/destinatarios/listados"],
+      "readinessMarkers": [{ "role": "link", "name": "Autorizados" }],
+      "controls": [
+        { "role": "link", "name": "Autorizados", "expectedVisibleCount": 1 },
+        { "role": "link", "name": "Por autorizar", "expectedVisibleCount": 1 }
+      ]
+    },
+    "recipient-creation": {
+      "description": "Creation form: name, alias, RUT, optional email, one native bank selector, account number, favorite checkbox.",
+      "kind": "result",
+      "frameNames": ["fe-destinatarios-pyme"],
+      "routeFragments": ["/nuevaWeb/fe-destinatarios-pyme/destinatarios/creacion"],
+      "controls": [{ "role": "button", "name": "Agregar destinatario", "expectedVisibleCount": 1 }]
+    },
+    "bcipass-challenge": {
+      "description": "Authorization challenge; the page must stay open until Autorización exitosa or a terminal error.",
+      "kind": "result",
+      "frameNames": ["fe-destinatarios-pyme"],
+      "controls": [{ "text": "Autoriza Destinatarios con Bcipass", "expectedVisibleCount": { "min": 0, "max": 1 } }]
+    }
+  },
+  "flow": [
+    { "step": "goto", "destination": "business-selector" },
+    { "step": "expect-state", "state": "business-selector" },
+    { "step": "click", "css": "a[id*='linkConvenio']", "index": "selected" },
+    { "step": "expect-frame", "frame": "fe-oss-shell-dashboard" },
+    { "step": "click", "text": "Mis Destinatarios", "frame": "fe-oss-shell-dashboard" },
+    { "step": "expect-frame", "frame": "fe-destinatarios-pyme" },
+    { "step": "expect-state", "state": "recipients-listing" },
+    { "step": "read", "what": "recipient-rows" }
+  ],
+  "successConditions": [
+    "list: every row's detail modal read and closed; both status tabs covered on a single page",
+    "create: recipient present under Por autorizar with matching details after one submission",
+    "authorize: Autorización exitosa observed, then recipient present under Autorizados",
+    "delete: row disappears and the recipient is absent from both status listings"
+  ],
+  "stopConditions": [
+    "enabled next-page control (pagination not verified)",
+    "changed form fields, missing or ambiguous controls",
+    "more than one matching recipient",
+    "five minutes without a recognized BciPass outcome",
+    "an unobserved BciPass deletion challenge"
+  ],
+  "supportedBranches": ["single-page status lists", "Banco Santander / santiago label pair", "creation without automatic approval"]
+}

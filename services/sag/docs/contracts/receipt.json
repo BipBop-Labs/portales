@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "1",
+  "service": "sag",
+  "operations": ["declaracion-jurada.download"],
+  "observedAt": "2026-09-14",
+  "explanation": "receipt.md",
+  "effect": "read",
+  "pageStates": {
+    "receipt-pdf": {
+      "description": "GET of the final-folio receipt PDF: HTTP 200, application/pdf, attachment disposition.",
+      "kind": "result",
+      "routeFragments": ["/declaracionJurada/<id>/uuid/<id>/pdf"]
+    }
+  },
+  "flow": [{ "step": "read", "what": "receipt-pdf" }],
+  "successConditions": ["PDF signature and MIME", "exactly one labeled line each for Folio Number, Identification, Document Number, SAG Sworn Statement, Declare luggage for minors, Arrival date to Chile, Entry Point to Chile"],
+  "stopConditions": ["non-PDF response", "mismatched labeled field", "denial, rate limit, unexpected destination"],
+  "supportedBranches": ["English receipt layout only"]
+}

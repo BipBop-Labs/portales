@@ -13,33 +13,24 @@ Portales grows through use: a real task establishes a need, the agent implements
 
 A temporary workaround is not the maintained capability. Bring useful behavior back into the service task and public CLI before declaring the integration complete. Do not add unrelated commands, general frameworks, or exhaustive tests along the way.
 
-## Diagnostics available today
+## Diagnostics available (2026-09-17)
 
-The unified CLI exposes JSON results on STDOUT and errors on STDERR with an exit status. Some flows also emit progress on STDERR. There is currently no unified persistent run log, run-history command, or general `doctor`/`debug` command. Do not assume that diagnostic history exists after a failure.
-
-Use the existing local tools first:
+Every service command writes a private, bounded run record and lifecycle events. Start with these before reading code:
 
 ```bash
-rg --files apps/cli services packages/runtime
-rg -n 'PORTAL_CHANGED|SESSION_EXPIRED' apps/cli/src services
-npm run build
-npm run lint
+portales doctor [service] --profile <name> --json   # local readiness; never contacts a portal
+portales runs list --service <service> --json       # recent runs, newest first
+portales runs show <run-id> --json                  # stage timings, typed error, recovery metadata, artifact descriptors
+portales artifacts list --service <service> --profile <name> --json
+portales artifacts verify <artifact-id> --json      # re-check size, SHA-256, and permissions on disk
+portales contract check <run-id> --json             # sanitized observation scaffold for a failed run, outside the repository
+portales <service> observe <operation> --profile <name> --json   # read-only structural evidence + contract-diff proposal
+portales <service> verify --live --profile <name>   # opt-in, read-only live check against the contract
 ```
 
-For a relevant existing test, run its file with `npm test -- <test-file>`. Choose the file from the source tree; do not generate a new suite merely to reproduce the module structure.
+Run records live under `$XDG_STATE_HOME/portales/runs` (0600, bounded retention). They contain stage names, durations, typed error codes, recovery metadata, contract version, browser mode, and artifact descriptors. They never contain credentials, cookies, HTML, request bodies, account data, or document contents. Raw STDERR is JSON lines for every event and error; unexpected process crashes may still print plain text.
 
-When an authorized command needs retained output, capture it in a private temporary directory outside the checkout. This example uses the existing local catalog command and needs no portal session:
-
-```bash
-umask 077
-run_dir=$(mktemp -d /tmp/portales-run.XXXXXX)
-node dist/apps/cli/src/main.js bci-pyme cartolas options --profile default \
-  >"$run_dir/result.json" 2>"$run_dir/diagnostics.jsonl"
-run_status=$?
-printf '%s\n' "$run_status" >"$run_dir/exit-code"
-```
-
-The build must already exist. Raw STDERR is not guaranteed to be JSONL for unexpected process failures. Inspect captures locally; a live command's result can contain private account data. Never attach captures to a commit, issue, or PR. Remove them when the investigation is complete. Do not enable broad browser/network debug dumps to compensate for missing diagnostics.
+The error envelope already carries `nextCommand` and `contractRef`; run that command before searching source. `version --json` and `doctor` report a stale build; rebuild with `npm run update` (never during a portal operation).
 
 ## Adding diagnostic context
 
@@ -51,14 +42,17 @@ If persistent logging is introduced for a demonstrated need, keep it outside the
 
 ## Recovery boundaries
 
-| Failure | Next step |
+| Code | Next step |
 | --- | --- |
-| Invalid local input or missing dependency | Correct it locally before remote execution. Use `options` for portal-defined choices. |
-| Missing or expired session | Surface the need for explicit authentication; never log in as a side effect of repair. |
-| Authentication failure, CAPTCHA, authorization denial, block, or rate limit | Stop remote attempts. Keep local diagnosis moving; require the documented human/provider resolution before resuming. Never reset a breaker just to test a patch. |
-| Changed selector, response, or readiness condition | Return `PORTAL_CHANGED`, observe the supported browser flow within the safety boundary, then repair the contract and adapter. |
-| Ambiguous write result | Reconcile observable state using an authorized read. Do not repeat the mutation. |
-| Live verification unavailable | Finish safe local work and state precisely what remains unverified and what is needed to resume. |
+| `INVALID_INPUT`, `LOCAL_DEPENDENCY_MISSING`, `SNAPSHOT_*` | Correct locally; follow `validation[].discoverWith` or re-run `prepare`. `doctor` names missing tools. |
+| `NOT_AUTHENTICATED`, `SESSION_EXPIRED` | Run the explicit `auth login`; never log in as a side effect of repair. |
+| `LOGIN_FAILED`, `ADDITIONAL_AUTH_REQUIRED`, `AUTHORIZATION_DENIED`, `ACCOUNT_BLOCKED`, `RATE_LIMITED` | Stop remote attempts. Check `auth breaker status`; a human clears the breaker. |
+| `BROWSER_LAUNCH_FAILED`, `PROVIDER_ERROR`, `READINESS_TIMEOUT` | Not a contract problem. Check `doctor`, provider availability, and the run record; do not add delays or broaden selectors. |
+| `CONTRACT_MISMATCH` | Read the smallest structural diff in the error, run `observe` for the operation, review the proposed contract diff, run local tests, verify once live, then update the dated contract. Never auto-apply. |
+| `DOWNLOAD_INVALID` | Inspect the artifact locally with `artifacts verify`; do not trust the file. |
+| `REMOTE_STATE_AMBIGUOUS` | Reconcile with an authorized read. Never repeat the mutation. |
+| `RUN_LOCKED` | Inspect `activeRunId` with `runs show`; wait or stop that run. |
+| Live verification unavailable | Finish safe local work and state precisely what remains unverified. |
 
 ## Durable learning and tests
 

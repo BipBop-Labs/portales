@@ -35,7 +35,7 @@ it('previews without writes, binds confirmation, waits for verification, and sav
     const dependencies = { openSessionPortal: vi.fn().mockResolvedValue(portal), stdout, stderr, login };
     const args = ['--profile', 'testing', '--input', input];
     expect(await runCli(['bci-pyme', 'destinatarios', 'prepare', '--action', 'create', ...args], dependencies)).toBe(0);
-    const preview = JSON.parse(stdout.mock.calls[0]?.[0] as string) as { confirmation: string };
+    const preview = (JSON.parse(stdout.mock.calls[0]?.[0] as string) as { result: { confirmation: string } }).result;
     expect(portal.createRecipient).not.toHaveBeenCalled();
     expect(await runCli(['bci-pyme', 'destinatarios', 'create', ...args, '--confirm', 'wrong'], dependencies)).toBe(8);
     expect(portal.createRecipient).not.toHaveBeenCalled();
@@ -48,7 +48,7 @@ it('previews without writes, binds confirmation, waits for verification, and sav
     expect(await run).toBe(0);
     expect(portal.createRecipient).toHaveBeenCalledOnce();
     expect(portal.close).toHaveBeenCalledOnce();
-    expect(JSON.parse(stdout.mock.calls[0]?.[0] as string)).toMatchObject({ outcome: 'pending', changed: true, recipient });
+    expect((JSON.parse(stdout.mock.calls[0]?.[0] as string) as { result: unknown }).result).toMatchObject({ outcome: 'pending', changed: true, recipient });
     expect(login).not.toHaveBeenCalled();
     // A repeated invocation cannot silently resubmit with a stale preview.
     expect(await runCli(['bci-pyme', 'destinatarios', 'create', ...args, '--confirm', preview.confirmation], dependencies)).toBe(8);
@@ -80,7 +80,7 @@ it('requires target-bound delete confirmation, deletes once, and verifies absenc
     const dependencies = { openSessionPortal: vi.fn().mockResolvedValue(portal), stdout, stderr, login };
     const args = ['--profile', 'testing', '--input', input];
     expect(await runCli(['bci-pyme', 'destinatarios', 'prepare', '--action', 'delete', ...args], dependencies)).toBe(0);
-    const preview = JSON.parse(stdout.mock.calls[0]?.[0] as string) as { confirmation: string };
+    const preview = (JSON.parse(stdout.mock.calls[0]?.[0] as string) as { result: { confirmation: string } }).result;
     expect(portal.deleteRecipient).not.toHaveBeenCalled();
     expect(await runCli(['bci-pyme', 'destinatarios', 'delete', ...args, '--confirm', 'wrong'], dependencies)).toBe(8);
     expect(portal.deleteRecipient).not.toHaveBeenCalled();
@@ -90,7 +90,7 @@ it('requires target-bound delete confirmation, deletes once, and verifies absenc
     expect(portal.deleteRecipient).toHaveBeenCalledExactlyOnceWith(target.businessId, recipient);
     portal.deleteRecipient.mockImplementationOnce(() => { portal.listRecipients.mockResolvedValue([]); });
     expect(await runCli(['bci-pyme', 'destinatarios', 'delete', ...args, '--confirm', preview.confirmation], dependencies)).toBe(0);
-    expect(JSON.parse(stdout.mock.calls[0]?.[0] as string)).toMatchObject({ outcome: 'deleted', changed: true });
+    expect((JSON.parse(stdout.mock.calls[0]?.[0] as string) as { result: unknown }).result).toMatchObject({ outcome: 'deleted', changed: true });
     expect(portal.deleteRecipient).toHaveBeenCalledTimes(2);
     expect(await runCli(['bci-pyme', 'destinatarios', 'delete', ...args, '--confirm', preview.confirmation], dependencies)).toBe(2);
     expect(portal.deleteRecipient).toHaveBeenCalledTimes(2);
@@ -117,7 +117,7 @@ it('authorizes only the selected existing recipient and refuses an unverified ap
     const dependencies = { openSessionPortal: vi.fn().mockResolvedValue(portal), stdout, stderr, login };
     const args = ['--profile', 'testing', '--input', input];
     expect(await runCli(['bci-pyme', 'destinatarios', 'prepare', '--action', 'authorize', ...args], dependencies)).toBe(0);
-    const preview = JSON.parse(stdout.mock.calls[0]?.[0] as string) as { confirmation: string };
+    const preview = (JSON.parse(stdout.mock.calls[0]?.[0] as string) as { result: { confirmation: string } }).result;
     stdout.mockClear();
     expect(await runCli(['bci-pyme', 'destinatarios', 'authorize', ...args, '--confirm', preview.confirmation], dependencies)).toBe(7);
     expect(portal.authorizeRecipient).toHaveBeenCalledExactlyOnceWith(target.businessId, recipient, expect.any(Function));
@@ -143,7 +143,7 @@ it('authorizes only the selected existing recipient and refuses an unverified ap
     expect(stdout).not.toHaveBeenCalled();
     approve();
     expect(await run).toBe(0);
-    expect(JSON.parse(stdout.mock.calls[0]?.[0] as string)).toMatchObject({ outcome: 'authorized', changed: true });
+    expect((JSON.parse(stdout.mock.calls[0]?.[0] as string) as { result: unknown }).result).toMatchObject({ outcome: 'authorized', changed: true });
     expect(portal.authorizeRecipient).toHaveBeenCalledTimes(2);
     expect(portal.close).toHaveBeenCalledOnce();
   } finally { await rm(directory, { recursive: true, force: true }); }

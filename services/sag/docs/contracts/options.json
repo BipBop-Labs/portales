@@ -1,0 +1,28 @@
+{
+  "schemaVersion": "1",
+  "service": "sag",
+  "operations": ["declaracion-jurada.options"],
+  "observedAt": "2026-09-14",
+  "explanation": "options.md",
+  "effect": "read",
+  "pageStates": {
+    "declaration-app": {
+      "description": "Public declaration application document; page scripts disabled during replay.",
+      "kind": "result",
+      "routeFragments": ["/declaracion-jurada"]
+    }
+  },
+  "flow": [{ "step": "goto", "destination": "declaration-app" }, { "step": "read", "what": "catalogs" }],
+  "responseFingerprints": {
+    "/paises": ["status:number", "data[].id", "data[].nombreEsp"],
+    "/generos": ["status:number", "data[].id"],
+    "/documentosViaje": ["status:number", "data[].id"],
+    "/tiposControlFronterizo": ["status:number", "data[].id"],
+    "/tiposTransportes": ["status:number", "data[].id"],
+    "/controlesFronterizos": ["status:number", "data[].id", "data[].nombre", "data[].estaActivo", "data[].tipoControlFronterizoId"],
+    "/controlesFronterizos/controlFronterizoTipoTransporte": ["status:number", "data[].controlFronterizoId", "data[].tipoTransporteId"]
+  },
+  "successConditions": ["expected document URL and title", "seven successful JSON envelopes with non-empty catalogs, unique IDs, and valid references"],
+  "stopConditions": ["any request outside the seven-URL allowlist", "non-200 or non-JSON envelope", "empty catalog or duplicate ID"],
+  "supportedBranches": ["GET catalogs only; the draft-creating POST is blocked"]
+}

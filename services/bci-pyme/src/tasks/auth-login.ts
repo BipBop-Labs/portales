@@ -15,7 +15,8 @@ interface Breaker {
   assertClear(profile: string): Promise<void> | void;
   trip(profile: string): Promise<void> | void;
 }
-interface LoginDependencies { secrets: SecretReader; breaker: Breaker; portal: LoginPortal }
+interface AuthStateWriter { recordAuthenticated(profile: string, stage: 'authenticated-shell'): Promise<void> | void }
+interface LoginDependencies { secrets: SecretReader; breaker: Breaker; portal: LoginPortal; authState?: AuthStateWriter }
 
 export function parseCredentials(value: string): BciCredentials {
   let parsed: unknown;
@@ -64,7 +65,8 @@ export async function loginBciPyme(
     if (attempt.submitted) await dependencies.breaker.trip(input.profile);
     throw new PortalError('REMOTE_STATE_AMBIGUOUS', 'The login result was not accepted by the portal.');
   }
-  return { profile: input.profile, authenticated: true as const };
+  await dependencies.authState?.recordAuthenticated(input.profile, 'authenticated-shell');
+  return { profile: input.profile, authenticated: true as const, lastAuthenticatedStage: 'authenticated-shell' as const };
 }
 
 export const authLoginMetadata = {

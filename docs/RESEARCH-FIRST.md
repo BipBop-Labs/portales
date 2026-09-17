@@ -45,7 +45,9 @@ Do not treat `DOMContentLoaded`, a click return, or HTTP 200 as success. Use the
 
 ### 4. Write the observed contract
 
-Create `services/<service>/docs/contracts/<operation>.md` with:
+Create `services/<service>/docs/contracts/<operation>.md` and its machine-checkable twin `<operation>.json` (schema in `packages/runtime/src/contracts.ts`, validated by `portales contract validate`). The JSON records observation date, expected page states (sanitized route fragments, frame names, readiness markers, control roles/names with expected visible counts, optional value-stripped aria snapshot), the declarative step list, success conditions, stop conditions, supported branches, and response-shape fingerprints. The Markdown explains; the JSON is what the adapter classifies against before parsing.
+
+The Markdown contract lists:
 
 - portal and operation;
 - observation date;
@@ -81,6 +83,17 @@ Implement the smallest path through the public CLI. Avoid new runtime seams or a
 ### 8. Validate minimally
 
 A live validation must be explicitly enabled, make the minimum calls, and use the public command. Compare its result with the visible portal state. Add a lean end-to-end test only when it catches a meaningful failure at reasonable maintenance cost; add narrower tests for real regressions or identified fragile safety boundaries. No new automated test is required merely to accompany a change. Never validate a write using throwaway financial, tax, legal, or administrative data.
+
+## Repair loop (2026-09-17)
+
+Portales never heals itself in production. When a run fails with `CONTRACT_MISMATCH`, `PROVIDER_ERROR`, or `READINESS_TIMEOUT`, the loop is:
+
+1. **Observe.** `portales <service> observe <operation> --profile <name>` (read-only; no login, no writes, no download). It classifies each expected page state, captures only allowlisted structure (page state, control roles/names/visible counts, frame names, sanitized routes, readiness markers, value-stripped aria snapshot, JSON key paths) and writes a private bundle under `$XDG_STATE_HOME/portales/observations/<run-id>/` with `observed.json` and `proposal.json`. Facts and hypotheses are separate fields.
+2. **Propose diff.** `portales contract check <run-id>` writes a sanitized scaffold under `$XDG_STATE_HOME/portales/contract-checks/<run-id>/` with the expected-vs-observed table, the facts, the hypotheses, and the proposed contract diff. Nothing is written into the checkout and no source is edited.
+3. **Agent review.** Reproduce the facts in a headed browser within the safety boundary. Reject hypotheses that the observation does not support. Keep the diff to the smallest structural change; never broaden selectors, add delays, or retry authentication.
+4. **Local tests.** Update synthetic tests for the corrected boundary; `npm run build && npm run lint && npm test`.
+5. **One safe live verification.** `portales <service> verify --profile <name> --live` exercises only read-only public commands and compares them with the contract. A result without `live: true` is not live evidence.
+6. **Update the dated contract.** Edit the JSON and Markdown together with the new observation date, then commit after the public-repository gate. Never auto-commit, auto-push, or learn selectors from unreviewed live data.
 
 ## Stop immediately when
 

@@ -17,6 +17,9 @@ import type { BciCredentials, LoginPortal } from '../tasks/auth-login.js';
 import { openBrowserSession, saveBrowserSession } from './browser-session.js';
 import { requireSafeProfile } from '../auth/login-breaker.js';
 import { hasExactRecipientDeleteQuestion } from './recipient-delete.js';
+import { bciContract, describeBciPage, requireBciPageState } from './page-state.js';
+import { classifyPage, type Classification, type PageDescription } from '../../../../packages/runtime/src/page-state.js';
+import { sanitizeRoute } from '../../../../packages/runtime/src/observation.js';
 
 export const publicLoginUrl = 'https://www.bci.cl/corporativo/banco-en-linea/pyme';
 export const authenticatedShellUrl = 'https://bel.bci.cl/cl/bci/aplicaciones/contenidoLayoutOSSPyme.jsf';
@@ -102,7 +105,9 @@ async function requireUniqueVisible(locator: Locator, description: string): Prom
     if (await candidate.isVisible()) visible.push(candidate);
   }
   if (visible.length !== 1) {
-    throw new PortalError('PORTAL_CHANGED', `Expected exactly one visible ${description}.`);
+    throw new PortalError('CONTRACT_MISMATCH', `Contract mismatch: expected exactly one visible ${description}, observed ${String(visible.length)}.`, {
+      recovery: { stage: 'navigate', contractRef: 'services/bci-pyme/docs/contracts/read-only-browser-flow.json#download-menu' },
+    });
   }
   return visible[0] as Locator;
 }
@@ -175,9 +180,49 @@ export class PlaywrightBciPymePortal implements BciPymePortal {
     )) return;
     if (isExpiredSessionLocation(this.page.url())
       || await this.page.getByRole('button', { name: 'Ingresar', exact: true }).count() > 0) {
-      throw new PortalError('SESSION_EXPIRED', 'The BCI session is not authenticated. Run auth login explicitly.');
+      throw new PortalError('SESSION_EXPIRED', 'The BCI session is not authenticated. Run auth login explicitly.', { recovery: { stage: 'session-check' } });
     }
-    throw new PortalError('PORTAL_CHANGED', 'The authenticated BCI shell was not uniquely identifiable.');
+    // Neither authenticated nor a known login page: report the smallest structural diff against the contract.
+    await requireBciPageState(this.page, 'businesses.list', 'business-selector', { stage: 'session-check' });
+    throw new PortalError('CONTRACT_MISMATCH', 'The authenticated BCI shell was not uniquely identifiable.', { recovery: { stage: 'session-check', contractRef: 'services/bci-pyme/docs/contracts/read-only-browser-flow.json', nextCommand: 'portales bci-pyme observe businesses.list --profile <profile>' } });
+  }
+
+  /** Read-only structural observation for observe mode: classifies each expected state without login, writes, or downloads. */
+  async observe(operation: 'businesses.list' | 'accounts.options' | 'cartolas.download', input: { businessId?: string }): Promise<{ states: Array<{ expectedState: string; description: PageDescription; classification: Classification; ariaSnapshot: string }>; stoppedBefore: string | null }> {
+    const states: Array<{ expectedState: string; description: PageDescription; classification: Classification; ariaSnapshot: string }> = [];
+    const loaded = await bciContract(operation);
+    if (loaded === null) throw new PortalError('INTERNAL', `No dated contract declares ${operation}.`);
+    const capture = async (expectedState: string, scope: Page | Frame): Promise<void> => {
+      const state = loaded.contract.pageStates[expectedState];
+      if (state === undefined) return;
+      const description = await describeBciPage(this.page, state);
+      const classification = classifyPage(loaded.contract, description, { candidates: [expectedState] });
+      const ariaSnapshot = await scope.locator('body').ariaSnapshot({ timeout: 10_000 }).catch(() => '');
+      states.push({ expectedState, description, classification, ariaSnapshot });
+    };
+    await this.page.goto(businessSelectorUrl, { waitUntil: 'domcontentloaded' });
+    await this.page.locator('tr').filter({ has: this.page.locator("a[id*='linkConvenio']") }).first().waitFor({ state: 'visible', timeout: 30_000 }).catch(() => undefined);
+    await capture('business-selector', this.page);
+    if (operation === 'businesses.list') return { states, stoppedBefore: null };
+    const businesses = await this.discoverBusinesses();
+    const businessId = input.businessId ?? businesses[0]?.id;
+    if (businessId === undefined || !businesses.some(({ id }) => id === businessId)) {
+      throw new PortalError('INVALID_INPUT', 'Observation needs a discovered business ID.', { recovery: { nextCommand: 'portales bci-pyme businesses list --profile <profile>' } });
+    }
+    // Observation captures the live structure without asserting it: navigate, then describe.
+    const { dashboard } = await this.openBusiness(businessId);
+    await capture('dashboard', dashboard);
+    const { movements } = await this.openMovementsFrom(dashboard);
+    await capture('movements', movements);
+    if (operation === 'accounts.options') return { states, stoppedBefore: null };
+    const downloadButton = movements.getByRole('button', { name: /Descargar/iu }).first();
+    if (await downloadButton.isVisible().catch(() => false)) {
+      await downloadButton.click();
+      await movements.getByText(/Descargar excel detallado/iu).first().waitFor({ state: 'visible', timeout: 10_000 }).catch(() => undefined);
+      await capture('download-menu', movements);
+      await this.page.keyboard.press('Escape').catch(() => undefined);
+    }
+    return { states, stoppedBefore: 'expect-download' };
   }
 
   private async businessRows(): Promise<Locator> {
@@ -188,11 +233,13 @@ export class PlaywrightBciPymePortal implements BciPymePortal {
     try {
       await rows.first().waitFor({ state: 'visible', timeout: 30_000 });
     } catch {
+      // Classify before reporting "no rows": a provider error page, an expired session, or a changed selector are distinct.
       await requireNoSelectorSystemError(this.page);
       if (isExpiredSessionLocation(this.page.url())) {
-        throw new PortalError('SESSION_EXPIRED', 'The BCI session is not authenticated. Run auth login explicitly.');
+        throw new PortalError('SESSION_EXPIRED', 'The BCI session is not authenticated. Run auth login explicitly.', { recovery: { stage: 'session-check' } });
       }
-      throw new PortalError('PORTAL_CHANGED', 'No visible business rows were available. Inspect the business selector in the browser before retrying; do not repeat login based on this error.');
+      await requireBciPageState(this.page, 'businesses.list', 'business-selector', { stage: 'navigate' });
+      throw new PortalError('READINESS_TIMEOUT', 'No visible business rows appeared within the readiness budget although the selector structure matches the contract.', { recovery: { stage: 'navigate', contractRef: 'services/bci-pyme/docs/contracts/read-only-browser-flow.json' } });
     }
     return rows;
   }
@@ -220,7 +267,10 @@ export class PlaywrightBciPymePortal implements BciPymePortal {
       if (frame !== undefined) return frame;
       await this.page.waitForTimeout(250);
     }
-    throw new PortalError('PORTAL_CHANGED', `BCI did not load the expected ${urlFragment} application.`);
+    const observed = this.page.frames().map((frame) => sanitizeRoute(frame.url())).filter((route) => route !== '/' && route !== '');
+    throw new PortalError('CONTRACT_MISMATCH', `Contract mismatch: expected frame ${urlFragment}, observed frames ${observed.join(', ') || '(none)'}.`, {
+      recovery: { stage: 'navigate', contractRef: 'services/bci-pyme/docs/contracts/read-only-browser-flow.json', nextAction: 'Do not add delays or retry. Run observe and review the proposed contract diff.' },
+    });
   }
 
   private async openBusiness(businessId: string): Promise<{ dashboard: Frame; business: BusinessOption }> {
@@ -460,14 +510,26 @@ export class PlaywrightBciPymePortal implements BciPymePortal {
       && this.activeMovements.movements.url().includes('fe-oss-shell-mov-cuenta')) {
       return this.activeMovements;
     }
+    const { movements, business } = await this.navigateToMovements(businessId);
+    await requireBciPageState(this.page, 'accounts.options', 'movements', { stage: 'navigate' });
+    this.activeMovements = { movements, business };
+    return this.activeMovements;
+  }
+
+  /** Opens the movements frame with the observed waits; it never classifies, so observe mode can describe a changed page. */
+  private async navigateToMovements(businessId: string): Promise<{ movements: Frame; business: BusinessOption }> {
     const { dashboard, business } = await this.openBusiness(businessId);
+    const { movements } = await this.openMovementsFrom(dashboard);
+    return { movements, business };
+  }
+
+  private async openMovementsFrom(dashboard: Frame): Promise<{ movements: Frame }> {
     const movementLink = dashboard.getByText('Mis Movimientos', { exact: false }).first();
     await movementLink.waitFor({ state: 'visible', timeout: 30_000 });
     await movementLink.click();
     const movements = await this.waitForFrame('fe-oss-shell-mov-cuenta');
     await movements.waitForTimeout(8_000);
-    this.activeMovements = { movements, business };
-    return this.activeMovements;
+    return { movements };
   }
 
   private async currentAccounts(movements: Frame): Promise<AccountOption[]> {
@@ -501,7 +563,9 @@ export class PlaywrightBciPymePortal implements BciPymePortal {
     try {
       await downloadButton.waitFor({ state: 'visible', timeout: 30_000 });
     } catch {
-      throw new PortalError('PORTAL_CHANGED', 'Expected a visible movements download button.');
+      throw new PortalError('CONTRACT_MISMATCH', 'Expected 1 visible download control in the movements frame, observed 0.', {
+        recovery: { stage: 'download', lastCompletedStage: 'navigate', contractRef: 'services/bci-pyme/docs/contracts/read-only-browser-flow.md#observed-flow', nextCommand: 'portales bci-pyme observe cartolas.download --profile <profile>' },
+      });
     }
     await downloadButton.click();
     const option = await requireUniqueVisible(
@@ -514,10 +578,12 @@ export class PlaywrightBciPymePortal implements BciPymePortal {
     ]);
     const failure = await download.failure();
     if (failure !== null) {
-      throw new PortalError('PORTAL_CHANGED', this.contextClosed
+      throw new PortalError(this.contextClosed ? 'BROWSER_LAUNCH_FAILED' : 'DOWNLOAD_INVALID', this.contextClosed
         ? 'The browser closed before the cartola download completed.'
         : failure === 'canceled' ? 'The cartola download was cancelled before completion.'
-          : 'BCI did not complete the download.');
+          : 'BCI did not complete the download.', {
+        recovery: { stage: 'download', lastCompletedStage: 'navigate', contractRef: 'services/bci-pyme/docs/contracts/read-only-browser-flow.md#observed-flow' },
+      });
     }
     const path = join(this.downloadDirectory, `cartola-${randomUUID()}.xlsx`);
     await download.saveAs(path);
@@ -531,8 +597,9 @@ async function requireNoSelectorSystemError(page: Page): Promise<void> {
   if (/vistaSelectorConvenio\.jsf/iu.test(page.url())
     && await page.getByText('Algo salió mal', { exact: true }).isVisible()) {
     throw new PortalError(
-      'PORTAL_CHANGED',
+      'PROVIDER_ERROR',
       'BCI displayed a system-error page instead of the business selector. Authentication cannot be established from this page. Check portal availability in the browser before retrying businesses list; do not repeat login based on this error.',
+      { recovery: { stage: 'session-check', contractRef: 'services/bci-pyme/docs/contracts/read-only-browser-flow.json#provider-error' } },
     );
   }
 }

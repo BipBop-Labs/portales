@@ -43,7 +43,7 @@ Complete when the operation has one sentence describing its value and one observ
 
 ## 3. Investigate in the browser
 
-Follow `RESEARCH-FIRST.md`. Create a dated contract under `services/<service>/docs/contracts/`. Stop before any remote mutation.
+Follow `RESEARCH-FIRST.md`. Create a dated contract under `services/<service>/docs/contracts/`: Markdown for the explanation and a JSON fingerprint (page states, control cardinalities, frame names, readiness and stop conditions) that the adapter checks before parsing. Stop before any remote mutation.
 
 Complete when selectors, request fields, token sources, response shape, readiness, success, and stop conditions are observed rather than inferred.
 
@@ -60,6 +60,8 @@ Do not extract shared portal behavior from one service. If this is the second us
 ## 6. Implement the task first, then its CLI command
 
 Build the portal operation, task boundary, and CLI route as one vertical slice. Keep the result machine-readable and the guardrails below the public command.
+
+The CLI command is a `CommandSpec` inside the service's `ServiceSpec` (`apps/cli/src/commands/<service>.ts`), registered with one line in `apps/cli/src/registry.ts`. Declare for every command: `path`, `summary`, `effect`, `auth`, `browser`, `profile`, every positional and option (with `discoverWith` for each portal-defined value), `confirm` for writes, `output`, `errors`, `contractRef`, and `contractVersion` (the observation date). Call `context.stage(...)` at the lifecycle boundaries and `context.recordArtifact(...)` for every verified download. Help, `catalog`, `describe`, validation errors, events, and run records then come for free; do not hand-write any of them. Authenticated services expose the same `auth setup|status|login|logout|breaker status` surface.
 
 The CLI command calls the task and nothing below it.
 

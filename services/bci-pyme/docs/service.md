@@ -72,6 +72,26 @@ contract.
 
 Listing and download commands never perform implicit login.
 
+## Authentication surface (2026-09-17)
+
+Every command below is local-only unless stated; none submits credentials or opens a browser:
+
+```text
+portales bci-pyme auth setup --profile <name>            # interactive keyring enrollment
+portales bci-pyme auth login --profile <name>            # exactly one explicit attempt (browser)
+portales bci-pyme auth status --profile <name>           # local session/breaker metadata
+portales bci-pyme auth logout --profile <name>           # removes local session material
+portales bci-pyme auth breaker status --profile <name>   # circuit-breaker state
+```
+
+`auth status` reports `sessionPresent`, `savedAt`, `earliestCookieExpiry`, `locallyExpired`,
+`lastAuthenticatedStage` (a static stage name recorded on the last accepted login),
+the breaker state, `newLoginPermitted`, and `liveness: "unknown-local-only"`. It reads
+only cookie metadata, never values, and makes no server-side liveness claim.
+
+`auth logout` deletes `session-state.json` and any legacy profile cookies. The recorded
+contract contains no observed BCI logout route, so `remoteRevoked` is always `false`.
+
 ## Browser session
 
 On Linux, browser-backed `portales bci-pyme ...` commands transparently relaunch once under `xvfb-run -a`, even when a desktop `DISPLAY` is available. Chrome remains headed (`headless: false`) on a private virtual display, so no browser window appears on the desktop. Interactive credential setup stays in the caller’s terminal. Callers still use only the public `portales` interface; they must not prepend Xvfb manually or invoke compiled modules. Other services are not wrapped. Linux deployments that enable BCI Pyme must provide `xvfb-run` on `PATH`.
@@ -97,10 +117,53 @@ After an explicit successful login:
 
 ```text
 portales bci-pyme businesses list --profile default
+portales bci-pyme businesses options --profile default --tree
 portales bci-pyme accounts options --profile default --business-id <discovered-id>
-portales bci-pyme cartolas options --profile default --account-id <discovered-id>
+portales bci-pyme cartolas options
+portales bci-pyme cartolas prepare --profile default --business <label-or-id> --account <label-or-id>
+portales bci-pyme cartolas download --profile default --snapshot <snapshot-id> [--output <private-dir> | --destination <alias>]
+portales bci-pyme cartolas download --profile default --business-id <id> --account-id <id>
 portales bci-pyme cartolas download --profile default --input <private-json-file>
 ```
+
+`businesses options --tree` returns every business with its nested accounts from one
+session. Option results carry `observedAt`, `source` (`live` or `packaged`),
+`contractVersion`, and `freshness`. Within one run a business's accounts are discovered
+at most once; nothing is cached across runs except snapshots.
+
+### Prepare and snapshots (2026-09-17)
+
+`cartolas prepare` opens one session, resolves each `--business`/`--account` pair
+(exact ID first, then a unique accent- and case-insensitive label match) and fails with
+`INVALID_INPUT` listing candidate IDs when resolution is not unique. It returns the
+normalized selections, a `fingerprint` (SHA-256 of the selections plus the discovered
+option IDs), and a `snapshotId`. The snapshot is stored privately under
+`$XDG_STATE_HOME/portales/bci-pyme/snapshots/<profile>/<snapshotId>.json` (mode 0600),
+holds only discovered IDs/labels, selections, and `contractVersion`, and expires after
+15 minutes.
+
+`cartolas download --snapshot <id>` validates the snapshot before opening a browser
+(`INVALID_INPUT` for another profile or unknown ID, `SNAPSHOT_EXPIRED` past
+`expiresAt`), then re-discovers the selected businesses' accounts and rejects with
+`SNAPSHOT_STALE` when any business or account ID appeared or disappeared, naming the
+smallest diff. Exactly one selection source is accepted per call.
+
+### Destinations and artifact descriptors
+
+Each verified XLSX is published atomically (no overwrite) to one of:
+
+- `--output <dir>`: an existing private (0700) directory outside any repository;
+- `--destination <alias>`: an alias from the private file
+  `$XDG_CONFIG_HOME/portales/destinations.json`
+  (`{"version":1,"destinations":{"<alias>":{"directory":"/abs/path","service":"bci-pyme","profile":"default"}}}`),
+  never committed to the repository;
+- default: `$XDG_DATA_HOME/portales/artifacts/bci-pyme/<profile>/excel-detallado/<businessId>/<accountId>/`.
+
+The result contains one complete artifact descriptor per download: `artifactId`, service,
+profile, `identifiers` (`businessId`, `accountId`), `documentType`, `extractedAt`,
+`coveredPeriod` (always `null`: the observed movements view exposes no date range),
+`byteCount`, `mediaType`, `sha256`, `validationChecks`, `destinationSource`, and the
+private `path`. Descriptors are indexed for `portales artifacts list|show|latest|verify`.
 
 Business and account IDs must come from the corresponding discovery command. They must not be guessed from labels or placed in public examples.
 
@@ -108,7 +171,7 @@ The private download input carries selected discovered IDs and document type. It
 
 ## Circuit breaker
 
-An authentication failure or ambiguity before BCI accepts the login trips a durable profile-specific circuit breaker. Errors after acceptance are post-login failures and may be retried through the authenticated session without re-entering credentials. Ordinary tasks cannot reset or bypass a genuine authentication breaker. Reset requires explicit human review and a separate administrative operation.
+An authentication failure or ambiguity before BCI accepts the login trips a durable profile-specific circuit breaker. `auth breaker status` reports `tripped`, `trippedAt`, `newLoginPermitted`, and `resetRequires: "human-review"`; a tripped breaker makes `auth login` fail with `ACCOUNT_BLOCKED` before reading credentials. Errors after acceptance are post-login failures and may be retried through the authenticated session without re-entering credentials. Ordinary tasks cannot reset or bypass a genuine authentication breaker. Reset requires explicit human review and a separate administrative operation.
 
 ## Forbidden capabilities
 

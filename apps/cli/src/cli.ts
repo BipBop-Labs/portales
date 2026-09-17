@@ -1,150 +1,144 @@
-import { writeDestinatario } from '../../../services/bci-pyme/src/tasks/destinatarios-write.js';
-import { readPrivateJson } from './private-input.js';
-import { PortalError } from '../../../services/bci-pyme/src/errors.js';
-import type { BciPymePortal, CartolaSelection } from '../../../services/bci-pyme/src/portal/types.js';
-import { listBusinesses } from '../../../services/bci-pyme/src/tasks/businesses-list.js';
-import { downloadCartolas } from '../../../services/bci-pyme/src/tasks/cartolas-download.js';
-import { listAccountOptions, listCartolaOptions } from '../../../services/bci-pyme/src/tasks/options.js';
-import { listDestinatarios } from '../../../services/bci-pyme/src/tasks/destinatarios-list.js';
-import { listDestinatarioOptions } from '../../../services/bci-pyme/src/tasks/destinatarios-options.js';
-import { runSag } from './sag.js';
+import { SCHEMA_VERSION, createStageRecorder } from '../../../packages/runtime/src/events.js';
+import { PortalError, asPortalError, exitCodeFor } from '../../../packages/runtime/src/errors.js';
+import { browserModeFor } from '../../../packages/runtime/src/browser-mode.js';
+import { recordArtifact } from '../../../packages/runtime/src/artifacts.js';
+import { acquireServiceLock, newRunId, pruneRunRecords, writeRunRecord, type RunRecord } from '../../../packages/runtime/src/runs.js';
+import { stateRoot, dataRoot } from '../../../packages/runtime/src/paths.js';
+import { findCommand, operationOf, parseArguments, renderHelp, type CommandSpec, type Registry, type RunContext } from '../../../packages/runtime/src/registry.js';
+import type { CliDependencies } from './dependencies.js';
+import { buildRegistry } from './registry.js';
 
-interface CliDependencies {
-  openSessionPortal(profile: string): Promise<BciPymePortal & { close?: () => Promise<void> }>;
-  setup?: (input: { profile: string }) => Promise<unknown>;
-  login(input: { profile: string }): Promise<unknown>;
-  loginSii?: (input: { profile: string }) => Promise<unknown>;
-  runSii?: (args: string[]) => Promise<number>;
-  stdout(value: string): void;
-  stderr(value: string): void;
+export type { CliDependencies } from './dependencies.js';
+
+interface Envelope {
+  schemaVersion: typeof SCHEMA_VERSION;
+  service: string;
+  operation: string;
+  runId: string;
 }
 
-function option(args: string[], name: string): string {
-  const index = args.indexOf(name);
-  const value = index >= 0 ? args[index + 1] : undefined;
-  if (value === undefined || value.startsWith('--')) {
-    throw new PortalError('INVALID_INPUT', `${name} is required.`);
-  }
-  return value;
-}
-
-function isSelection(value: unknown): value is CartolaSelection {
-  if (typeof value !== 'object' || value === null) return false;
-  const item = value as Record<string, unknown>;
-  return typeof item.businessId === 'string'
-    && typeof item.accountId === 'string'
-    && item.documentType === 'excel-detallado';
-}
-
-async function readPrivateSelections(path: string): Promise<CartolaSelection[]> {
-  const parsed = await readPrivateJson(path);
-  if (typeof parsed !== 'object' || parsed === null) {
-    throw new PortalError('INVALID_INPUT', 'The input file must contain a JSON object.');
-  }
-  const selections = (parsed as Record<string, unknown>).selections;
-  if (!Array.isArray(selections) || !selections.every(isSelection)) {
-    throw new PortalError('INVALID_INPUT', 'The input file must contain valid cartola selections.');
-  }
-  return selections;
-}
-
-function loginInput(args: string[], profile: string): { profile: string } {
-  const expected = ['bci-pyme', 'auth', 'login', '--profile', profile];
-  if (args.length !== expected.length || expected.some((value, index) => args[index] !== value)) {
-    throw new PortalError('INVALID_INPUT', 'auth login accepts only --profile.');
-  }
-  return { profile };
-}
-
-export async function runCli(args: string[], dependencies: CliDependencies): Promise<number> {
-  let portal: (BciPymePortal & { close?: () => Promise<void> }) | undefined;
-  try {
-    if (args[0] === 'sag') return await runSag(args.slice(1), value => { dependencies.stdout(value); });
-    if (args[0] === 'sii') {
-      if (args[1] === 'auth' && args[2] === 'login') {
-        const profile = option(args, '--profile');
-        const expected = ['sii', 'auth', 'login', '--profile', profile];
-        if (args.length !== expected.length || expected.some((value, index) => args[index] !== value)) {
-          throw new PortalError('INVALID_INPUT', 'SII auth login accepts only --profile.');
-        }
-        if (!dependencies.loginSii) throw new PortalError('PORTAL_CHANGED', 'The SII login dependency is unavailable.');
-        const result = await dependencies.loginSii({ profile });
-        dependencies.stdout(`${JSON.stringify(result)}\n`);
-        return 0;
-      }
-      if (!dependencies.runSii) throw new PortalError('PORTAL_CHANGED', 'The SII dependency is unavailable.');
-      return await dependencies.runSii(args.slice(1));
-    }
-    if (args[0] !== 'bci-pyme') throw new PortalError('INVALID_INPUT', 'Unknown service.');
-    const profile = option(args, '--profile');
-    let result: unknown;
-    if (args[1] === 'auth' && args[2] === 'setup') {
-      const expected = ['bci-pyme', 'auth', 'setup', '--profile', profile];
-      if (args.length !== expected.length || expected.some((value, index) => args[index] !== value)) {
-        throw new PortalError('INVALID_INPUT', 'auth setup accepts only --profile; enter credentials at the hidden terminal prompts.');
-      }
-      if (!dependencies.setup) throw new PortalError('KEYRING_UNAVAILABLE', 'Interactive credential setup is unavailable.');
-      result = await dependencies.setup({ profile });
-    } else if (args[1] === 'auth' && args[2] === 'login') {
-      result = await dependencies.login(loginInput(args, profile));
-    } else if (args[1] === 'businesses' && args[2] === 'list') {
-      portal = await dependencies.openSessionPortal(profile);
-      result = await listBusinesses({ profile }, portal);
-    } else if (args[1] === 'destinatarios' && ['prepare', 'create', 'authorize', 'delete'].includes(args[2] ?? '')) {
-      const preview = args[2] === 'prepare';
-      const action = preview ? option(args, '--action') : args[2];
-      if (action !== 'create' && action !== 'authorize' && action !== 'delete') throw new PortalError('INVALID_INPUT', 'The action must be create, authorize or delete.');
-      const value = await readPrivateJson(option(args, '--input'));
-      const confirmation = preview ? undefined : option(args, '--confirm');
-      portal = await dependencies.openSessionPortal(profile);
-      result = await writeDestinatario({ profile, action, value, preview, ...(confirmation === undefined ? {} : { confirmation }) }, portal,
-        stage => { dependencies.stderr(`${JSON.stringify({ service: 'bci-pyme', operation: `destinatarios.${action}`, stage })}\n`); });
-    } else if (args[1] === 'destinatarios' && args[2] === 'list') {
-      const businessId = option(args, '--business-id');
-      portal = await dependencies.openSessionPortal(profile);
-      result = await listDestinatarios({ profile, businessId }, portal);
-    } else if (args[1] === 'destinatarios' && args[2] === 'options') {
-      const businessId = option(args, '--business-id');
-      portal = await dependencies.openSessionPortal(profile);
-      result = await listDestinatarioOptions({ profile, businessId }, portal);
-    } else if (args[1] === 'accounts' && args[2] === 'options') {
-      const businessId = option(args, '--business-id');
-      portal = await dependencies.openSessionPortal(profile);
-      result = await listAccountOptions(
-        { profile, businessId },
-        portal,
-      );
-    } else if (args[1] === 'cartolas' && args[2] === 'options') {
-      result = listCartolaOptions();
-    } else if (args[1] === 'cartolas' && args[2] === 'download') {
-      const selections = await readPrivateSelections(option(args, '--input'));
-      portal = await dependencies.openSessionPortal(profile);
-      result = await downloadCartolas(
-        { profile, selections },
-        portal,
-      );
-    } else {
-      throw new PortalError('INVALID_INPUT', 'Unknown command.');
-    }
-    dependencies.stdout(`${JSON.stringify(result)}\n`);
-    return 0;
-  } catch (error: unknown) {
-    const failure = error instanceof PortalError
-      ? error
-      : new PortalError('PORTAL_CHANGED', 'The operation could not be completed safely.');
-    dependencies.stderr(`${JSON.stringify({ error: {
+function errorEnvelope(envelope: Envelope, failure: PortalError) {
+  return {
+    ...envelope,
+    error: {
       code: failure.code,
       message: failure.message,
       retryable: failure.retryable,
-    } })}\n`);
-    return failure.code === 'CONFIRMATION_REQUIRED' ? 8 : failure.code === 'INVALID_INPUT' ? 2
-      : failure.code === 'NOT_AUTHENTICATED' || failure.code === 'SESSION_EXPIRED' ? 3
-        : failure.code === 'LOGIN_FAILED' || failure.code === 'ADDITIONAL_AUTH_REQUIRED'
-          || failure.code === 'CREDENTIALS_INVALID' || failure.code === 'CREDENTIALS_NOT_CONFIGURED'
-          || failure.code === 'KEYRING_LOCKED' || failure.code === 'KEYRING_UNAVAILABLE' ? 4
-        : failure.code === 'AUTHORIZATION_DENIED' ? 5
-          : failure.code === 'ACCOUNT_BLOCKED' || failure.code === 'RATE_LIMITED' ? 6 : 7;
-  } finally {
-    await portal?.close?.();
+      ...failure.recovery,
+      ...(failure.validation === undefined ? {} : { validation: failure.validation }),
+    },
+  };
+}
+
+/** Runs one public command: parse, lock, record, emit lifecycle events, and wrap the result. */
+export async function runCli(args: string[], dependencies: CliDependencies): Promise<number> {
+  const registry: Registry<CliDependencies> = dependencies.registry ?? buildRegistry();
+  const env = dependencies.env ?? process.env;
+  const startedAt = Date.now();
+  const runId = newRunId(new Date(startedAt));
+  let envelope: Envelope = { schemaVersion: SCHEMA_VERSION, service: 'portales', operation: 'cli', runId };
+  try {
+    if (args.length === 0 || args.includes('--help') || args[0] === 'help') {
+      const words = args.filter((word) => word !== '--help' && word !== 'help');
+      dependencies.stdout(renderHelp(registry, words));
+      return 0;
+    }
+    const found = findCommand(registry, args);
+    if (found === undefined) {
+      const service = registry.services.find((item) => item.slug === args[0]);
+      throw new PortalError('INVALID_INPUT', service === undefined ? `Unknown service or command: ${args[0] ?? ''}.` : `Unknown ${service.slug} command: ${args.slice(1, 3).join(' ')}.`, {
+        validation: [{ field: 'command', expected: service === undefined ? `one of: ${registry.services.map((item) => item.slug).join(', ')}, or a global command` : `one of the commands listed by portales ${service.slug} --help` }],
+        recovery: { nextCommand: service === undefined ? 'portales --help' : `portales ${service.slug} --help` },
+      });
+    }
+    const spec = found.spec;
+    envelope = { ...envelope, service: spec.service, operation: operationOf(spec) };
+    const input = parseArguments(spec, args.slice(found.consumed));
+    return await execute(spec, input, { registry, dependencies, env, runId, startedAt, envelope });
+  } catch (error: unknown) {
+    const failure = asPortalError(error);
+    dependencies.stderr(`${JSON.stringify(errorEnvelope(envelope, failure))}\n`);
+    return exitCodeFor(failure.code);
   }
+}
+
+async function execute(
+  spec: CommandSpec<CliDependencies>,
+  input: ReturnType<typeof parseArguments>,
+  run: { registry: Registry<CliDependencies>; dependencies: CliDependencies; env: NodeJS.ProcessEnv; runId: string; startedAt: number; envelope: Envelope },
+): Promise<number> {
+  const { dependencies, env, runId, startedAt, envelope } = run;
+  const browserMode = browserModeFor(spec.browser, env);
+  const persist = spec.service !== 'portales';
+  const recorder = createStageRecorder({
+    runId, service: spec.service, operation: envelope.operation, browserMode, startedAt,
+    write: (line) => { if (persist) dependencies.stderr(line); },
+  });
+  const state = dependencies.stateRoot ?? stateRoot(env);
+  const data = dependencies.dataRoot ?? dataRoot(env);
+  const record: RunRecord = {
+    schemaVersion: '1', runId, service: spec.service, operation: envelope.operation, profile: input.profile,
+    effect: spec.effect, startedAt: new Date(startedAt).toISOString(), endedAt: null, status: 'running', exitCode: null,
+    browserMode, contractVersion: spec.contractVersion ?? null, packageVersion: dependencies.packageVersion ?? '0.0.0',
+    commit: dependencies.commit ?? null, stages: recorder.timings as RunRecord['stages'], error: null, artifacts: [],
+  };
+  const context: RunContext<CliDependencies> = {
+    runId, service: spec.service, operation: envelope.operation, profile: input.profile, browserMode,
+    contractVersion: spec.contractVersion ?? null,
+    stage: (stage, detail) => { recorder.stage(stage, detail); },
+    stderr: (line) => { dependencies.stderr(line.endsWith('\n') ? line : `${line}\n`); },
+    stdoutRaw: (line) => { dependencies.stdout(line); },
+    recordArtifact: async (descriptor) => {
+      const saved = await recordArtifact({ runId, service: spec.service, operation: envelope.operation, profile: descriptor.profile ?? input.profile ?? 'default', ...descriptor }, data);
+      record.artifacts.push({ artifactId: saved.artifactId, mediaType: saved.mediaType, byteCount: saved.byteCount, sha256: saved.sha256, path: saved.path });
+      return saved;
+    },
+    deps: dependencies, env,
+  };
+  let release: (() => Promise<void>) | undefined;
+  let exitCode = 0;
+  try {
+    recorder.stage('preflight');
+    if (spec.browser !== 'none' && input.profile !== null && persist) {
+      const lock = await acquireServiceLock({ runId, service: spec.service, profile: input.profile, operation: envelope.operation }, state);
+      if (!lock.acquired) {
+        throw new PortalError('RUN_LOCKED', `Another run (${lock.active.runId}, ${lock.active.operation}) is using ${spec.service} profile ${input.profile}.`, {
+          recovery: { activeRunId: lock.active.runId, nextCommand: `portales runs show ${lock.active.runId} --json` },
+        });
+      }
+      release = lock.release;
+    }
+    const result = await spec.run(input, context);
+    recorder.stage('completed');
+    record.status = 'completed';
+    if (result !== undefined) {
+      const body = { ...envelope, browserMode, result };
+      dependencies.stdout(`${JSON.stringify(body, null, input.human ? 2 : undefined)}\n`);
+    }
+  } catch (error: unknown) {
+    const failure = asPortalError(error).withRecovery({
+      ...(recorder.lastCompleted() === undefined ? {} : { lastCompletedStage: recorder.lastCompleted() as NonNullable<ReturnType<typeof recorder.lastCompleted>> }),
+      ...(spec.contractRef === undefined ? {} : { contractRef: spec.contractRef }),
+      ...(spec.contractVersion === undefined ? {} : { contractVersion: spec.contractVersion }),
+    });
+    const stageAware = failure.recovery.stage === undefined ? failure.withRecovery({ stage: recorder.lastCompleted() ?? 'preflight' }) : failure;
+    recorder.stage('failed', stageAware.code);
+    record.status = 'failed';
+    record.error = { code: stageAware.code, recovery: stageAware.recovery, ...(stageAware.validation === undefined ? {} : { validation: stageAware.validation }) };
+    dependencies.stderr(`${JSON.stringify(errorEnvelope(envelope, stageAware))}\n`);
+    exitCode = exitCodeFor(stageAware.code);
+  } finally {
+    await release?.();
+    record.endedAt = new Date().toISOString();
+    record.exitCode = exitCode;
+    if (persist) {
+      try {
+        await writeRunRecord(record, state);
+        await pruneRunRecords(state);
+      } catch {
+        // A failed private record must never change the outcome of the operation.
+      }
+    }
+  }
+  return exitCode;
 }

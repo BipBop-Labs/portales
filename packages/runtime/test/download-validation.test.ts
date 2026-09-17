@@ -29,7 +29,7 @@ describe('download validation', () => {
         path,
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       ),
-    ).rejects.toMatchObject({ code: 'PORTAL_CHANGED' });
+    ).rejects.toMatchObject({ code: 'DOWNLOAD_INVALID' });
   });
 
   it('rejects a ZIP that is not an XLSX workbook', async () => {
@@ -43,7 +43,7 @@ describe('download validation', () => {
       path,
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       'Synthetic Business',
-    )).rejects.toMatchObject({ code: 'PORTAL_CHANGED' });
+    )).rejects.toMatchObject({ code: 'DOWNLOAD_INVALID' });
   });
 
   it('requires the expected business identity inside an XLSX', async () => {
@@ -59,7 +59,7 @@ describe('download validation', () => {
       path,
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       'Different Business',
-    )).rejects.toMatchObject({ code: 'PORTAL_CHANGED' });
+    )).rejects.toMatchObject({ code: 'DOWNLOAD_INVALID' });
   });
 
   it('requires configured semantic labels inside an XLSX', async () => {
@@ -76,6 +76,6 @@ describe('download validation', () => {
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       undefined,
       ['Fecha de transacción', 'Saldo contable'],
-    )).rejects.toMatchObject({ code: 'PORTAL_CHANGED' });
+    )).rejects.toMatchObject({ code: 'DOWNLOAD_INVALID' });
   });
 });

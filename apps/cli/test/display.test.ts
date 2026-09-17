@@ -86,10 +86,8 @@ describe('BCI virtual display regression', () => {
     child.emit('error', new Error('spawn xvfb-run ENOENT /private/internal/path'));
     child.emit('exit', 1, null);
 
-    await expect(result).resolves.toBe(7);
-    expect(writes).toEqual([
-      '{"error":{"code":"PORTAL_CHANGED","message":"The operation could not be completed safely.","retryable":false}}\n',
-    ]);
+    await expect(result).resolves.toBe(1);
+    expect(JSON.parse(writes[0] ?? '')).toMatchObject({ error: { code: 'BROWSER_LAUNCH_FAILED', nextCommand: 'portales doctor bci-pyme --json' } });
     expect(writes[0]).not.toContain('ENOENT');
     expect(writes[0]).not.toContain('/private/internal/path');
     expect(signalSource.listenerCount('SIGINT')).toBe(0);

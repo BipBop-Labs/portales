@@ -1,5 +1,7 @@
 # Declaration preparation — observed 2026-09-14
 
+Machine-checkable twin: [`declaration.json`](declaration.json); validate with `portales contract validate`.
+
 ## Scope and evidence
 
 The observed branch is a Chilean adult using a Chilean identity document,

@@ -25,7 +25,7 @@ describe('public CLI', () => {
 
     expect(loginSii).toHaveBeenCalledWith({ profile: 'testing' });
     expect(runSii).not.toHaveBeenCalled();
-    expect(writes).toEqual(['{"authenticated":true,"reason":"keyring_login"}\n']);
+    expect(JSON.parse(writes[0] ?? '')).toMatchObject({ schemaVersion: '1', service: 'sii', operation: 'auth.login', result: { authenticated: true, reason: 'keyring_login' } });
   });
 
   it('dispatches explicit auth login without constructing a session portal', async () => {
@@ -38,7 +38,7 @@ describe('public CLI', () => {
     )).toBe(0);
     expect(login).toHaveBeenCalledWith({ profile: 'testing' });
     expect(openSessionPortal).not.toHaveBeenCalled();
-    expect(writes).toEqual(['{"profile":"testing","authenticated":true}\n']);
+    expect(JSON.parse(writes[0] ?? '')).toMatchObject({ service: 'bci-pyme', operation: 'auth.login', result: { profile: 'testing', authenticated: true } });
   });
 
   it('rejects unsupported login arguments before accessing authentication', async () => {
@@ -61,7 +61,7 @@ describe('public CLI', () => {
       'bci-pyme', 'auth', 'setup', '--profile', 'testing',
     ], dependencies)).toBe(0);
     expect(setup).toHaveBeenCalledWith({ profile: 'testing' });
-    expect(stdout).toHaveBeenCalledWith('{"configured":true,"profile":"testing"}\n');
+    expect((JSON.parse(stdout.mock.calls[0]?.[0] as string) as { result: unknown }).result).toEqual({ configured: true, profile: 'testing' });
     expect(await runCli([
       'bci-pyme', 'auth', 'setup', '--profile', 'testing', '--password', 'synthetic-secret',
     ], dependencies)).toBe(2);
@@ -86,7 +86,7 @@ describe('public CLI', () => {
     expect(await runCli([
       'bci-pyme', 'destinatarios', 'options', '--profile', 'testing', '--business-id', 'synthetic-business',
     ], dependencies)).toBe(0);
-    expect(JSON.parse(stdout.mock.calls[0]?.[0] as string)).toEqual({
+    expect((JSON.parse(stdout.mock.calls[0]?.[0] as string) as { result: unknown }).result).toEqual({
       field: 'bank-id', dependsOn: { businessId: 'synthetic-business' }, options: [
         { id: 'synthetic-bank-a', label: 'Synthetic Bank A', aliases: [] },
         { id: 'synthetic-bank-b', label: 'Synthetic Bank B', aliases: [] },
@@ -117,7 +117,7 @@ describe('public CLI', () => {
     const dependencies = { openSessionPortal: vi.fn().mockResolvedValue(portal), login, stdout, stderr: vi.fn() };
     const args = ['bci-pyme', 'destinatarios', 'list', '--profile', 'testing', '--business-id'];
     expect(await runCli([...args, 'synthetic-business'], dependencies)).toBe(0);
-    expect(JSON.parse(stdout.mock.calls[0]?.[0] as string)).toEqual({ businessId: 'synthetic-business', recipients });
+    expect((JSON.parse(stdout.mock.calls[0]?.[0] as string) as { result: unknown }).result).toEqual({ businessId: 'synthetic-business', recipients });
     expect(portal.listRecipients).toHaveBeenCalledExactlyOnceWith('synthetic-business');
     expect(await runCli([...args, 'unlisted-business'], dependencies)).toBe(2);
     expect(portal.listRecipients).toHaveBeenCalledOnce();
@@ -139,7 +139,10 @@ describe('public CLI', () => {
       { openSessionPortal: vi.fn().mockResolvedValue(portal), login, stdout: (value) => writes.push(value), stderr: vi.fn() },
     );
     expect(exitCode).toBe(0);
-    expect(writes).toEqual(['{"businesses":[]}\n']);
+    expect(writes).toHaveLength(1);
+    expect(JSON.parse(writes[0] ?? '')).toMatchObject({ schemaVersion: '1', service: 'bci-pyme', operation: 'businesses.list', result: { businesses: [] } });
+    expect((JSON.parse(writes[0] ?? '') as { browserMode: string }).browserMode).toMatch(/^headed-/u);
+    expect((JSON.parse(writes[0] ?? '') as { runId: string }).runId).toMatch(/^run_/u);
     expect(portal.requireAuthenticatedSession).toHaveBeenCalledOnce();
     expect(login).not.toHaveBeenCalled();
   });
@@ -155,14 +158,24 @@ describe('public CLI', () => {
       requireAuthenticatedSession: vi.fn().mockResolvedValue(undefined),
       discoverBusinesses: vi.fn().mockResolvedValue([{ id: 'business-synthetic-a', label: 'Empresa' }]),
       discoverAccounts: vi.fn().mockResolvedValue([{ id: 'account-synthetic-a', label: 'Cuenta' }]),
-      downloadCartola: vi.fn().mockResolvedValue({ path: '/private/synthetic/file.xlsx', mediaType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', byteCount: 20, sha256: 'b'.repeat(64) }),
+      downloadCartola: vi.fn(async () => {
+        const path = join(directory, 'cartola-synthetic.xlsx');
+        await writeFile(path, 'synthetic-bytes', { mode: 0o600 });
+        return { path, mediaType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', byteCount: 15, sha256: 'b'.repeat(64) };
+      }),
     };
     const login = vi.fn();
+    const stdout = vi.fn();
     expect(await runCli(
       ['bci-pyme', 'cartolas', 'download', '--profile', 'testing', '--input', inputPath],
-      { openSessionPortal: vi.fn().mockResolvedValue(portal), login, stdout: vi.fn(), stderr: vi.fn() },
+      { openSessionPortal: vi.fn().mockResolvedValue(portal), login, stdout, stderr: vi.fn() },
     )).toBe(0);
     expect(portal.downloadCartola).toHaveBeenCalledOnce();
+    const { downloads } = (JSON.parse(stdout.mock.calls[0]?.[0] as string) as { result: { downloads: Record<string, unknown>[] } }).result;
+    expect(downloads[0]).toMatchObject({ businessId: 'business-synthetic-a', accountId: 'account-synthetic-a', documentType: 'excel-detallado', mediaType: expect.stringContaining('spreadsheetml') as string, byteCount: 15, sha256: 'b'.repeat(64), destinationSource: 'default', coveredPeriod: null });
+    expect(downloads[0]?.artifactId).toMatch(/^art_/u);
+    expect(String(downloads[0]?.path)).toContain(join('portales', 'artifacts', 'bci-pyme', 'testing', 'excel-detallado', 'business-synthetic-a', 'account-synthetic-a'));
+    expect(downloads[0]?.validationChecks).toEqual(['private-permissions', 'signature', 'zip-crc', 'xlsx-structure', 'workbook-labels']);
     expect(login).not.toHaveBeenCalled();
   });
 
@@ -173,9 +186,11 @@ describe('public CLI', () => {
     expect(await runCli(
       ['bci-pyme', 'businesses', 'list', '--profile', 'testing'],
       { openSessionPortal, login: vi.fn(), stdout, stderr },
-    )).toBe(7);
+    )).toBe(1);
     expect(stdout).not.toHaveBeenCalled();
-    expect(stderr).toHaveBeenCalledWith('{"error":{"code":"PORTAL_CHANGED","message":"The operation could not be completed safely.","retryable":false}}\n');
+    const failure = stderr.mock.calls.map(([line]) => JSON.parse(line as string) as { error?: { code: string; message: string; stage: string; nextCommand?: string } }).find((line) => line.error !== undefined);
+    expect(failure?.error).toMatchObject({ code: 'INTERNAL', message: 'The operation could not be completed safely.', retryable: false, stage: 'session-check', lastCompletedStage: 'session-check', safeToRetry: false });
+    expect(JSON.stringify(failure)).not.toContain('browser implementation detail');
   });
 
   it('uses the stable authorization-denied exit code', async () => {
@@ -187,6 +202,7 @@ describe('public CLI', () => {
         login: vi.fn(), stdout: vi.fn(), stderr,
       },
     )).toBe(5);
-    expect(stderr).toHaveBeenCalledWith('{"error":{"code":"AUTHORIZATION_DENIED","message":"Synthetic denial.","retryable":false}}\n');
+    const denial = stderr.mock.calls.map(([line]) => JSON.parse(line as string) as { error?: unknown }).find((line) => line.error !== undefined);
+    expect(denial).toMatchObject({ schemaVersion: '1', service: 'bci-pyme', operation: 'businesses.list', error: { code: 'AUTHORIZATION_DENIED', message: 'Synthetic denial.', retryable: false, safeToRetry: false, remoteMutationPossible: false } });
   });
 });

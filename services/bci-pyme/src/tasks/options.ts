@@ -22,6 +22,10 @@ export async function listAccountOptions(
     field: 'account-id' as const,
     dependsOn: { businessId: input.businessId },
     options: accounts.map(({ id, label }) => ({ id, label, aliases: [] as string[] })),
+    observedAt: new Date().toISOString(),
+    source: 'live' as const,
+    contractVersion: '2026-09-17',
+    freshness: 'discovered-this-run' as const,
   };
 }
 
@@ -33,5 +37,9 @@ export function listCartolaOptions() {
     options: [
       { id: 'excel-detallado', label: 'Excel detallado', aliases: [] as string[] },
     ],
+    observedAt: '2026-09-14T00:00:00.000Z',
+    source: 'packaged' as const,
+    contractVersion: '2026-09-17',
+    freshness: 'packaged-catalog' as const,
   };
 }

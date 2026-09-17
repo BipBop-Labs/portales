@@ -1,6 +1,7 @@
 # BCI Pyme destinatarios
 
 - Observation date: 2026-09-14
+- Machine-checkable twin: [`destinatarios.json`](destinatarios.json); validate with `portales contract validate`.
 - Scope: selected business's saved transfer recipients
 - Observed read flow: business selector → dashboard → `Mis Destinatarios` →
   `Agregar destinatario`
