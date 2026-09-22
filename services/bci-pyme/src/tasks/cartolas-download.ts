@@ -1,4 +1,3 @@
-import { basename } from 'node:path';
 import type { FileDescriptor } from '../../../../packages/runtime/src/downloads.js';
 import { publishArtifactFile, resolveDestination } from '../../../../packages/runtime/src/destinations.js';
 import { PortalError, invalidInput } from '../errors.js';
@@ -76,8 +75,8 @@ export async function downloadCartolas(
         ...(input.destination === undefined ? {} : { destination: input.destination }),
       }, { data: roots.dataRoot, ...(roots.configRoot === undefined ? {} : { config: roots.configRoot }) });
       const stamp = now.toISOString().replace(/[-:.TZ]/gu, '').slice(0, 14);
-      const fileName = `cartola-${selection.documentType}-${stamp}-${basename(descriptor.path).replace(/^cartola-/u, '')}`;
-      path = await publishArtifactFile(descriptor.path, destination.directory, fileName.replace(/[^A-Za-z0-9._-]/gu, '-'));
+      const fileName = `cartola-${stamp}-${descriptor.sha256.slice(0, 16)}.xlsx`;
+      path = await publishArtifactFile(descriptor.path, destination.directory, fileName);
       destinationSource = destination.source;
     }
     downloads.push({
