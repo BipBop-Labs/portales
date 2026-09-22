@@ -1,6 +1,6 @@
 import { chmod, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { runCli } from '../src/cli.js';
 
@@ -133,6 +133,22 @@ describe('cartolas prepare and snapshot download', () => {
     const both = harness();
     expect(await runCli(['bci-pyme', 'cartolas', 'download', '--profile', 'testing', '--snapshot', 'snap_00000000000000_00000000', '--input', '/x'], both.deps)).toBe(2);
     expect(both.deps.openSessionPortal).not.toHaveBeenCalled();
+  });
+
+  it('publishes production-length cartola names as safe local artifact names', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'portales-synthetic-long-name-'));
+    const portal = syntheticPortal(directory);
+    portal.downloadCartola.mockImplementationOnce(async () => {
+      const path = join(directory, 'cartola-20260922192922-801a34eb-3079-4f4b-aa46-a1ae1dd7a4a3.xlsx');
+      await writeFile(path, 'synthetic-bytes', { mode: 0o600 });
+      return { path, mediaType: XLSX, byteCount: 15, sha256: 'c'.repeat(64) };
+    });
+    const h = harness();
+    h.deps.openSessionPortal.mockResolvedValue(portal);
+
+    expect(await runCli(['bci-pyme', 'cartolas', 'download', '--profile', 'testing', '--business-id', 'business-synthetic-a', '--account-id', 'account-synthetic-a1'], h.deps)).toBe(0);
+    const { downloads } = h.result() as { downloads: { path: string }[] };
+    expect(basename(downloads[0]?.path ?? '')).toMatch(/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/u);
   });
 
   it('returns the business/account tree from one session and local auth status without a browser', async () => {
