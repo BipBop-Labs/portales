@@ -287,9 +287,47 @@ export class PlaywrightBciPymePortal implements BciPymePortal {
     return { dashboard, business };
   }
 
+  /** The dashboard can open a modal announcement over its shortcuts; only its observed close image dismisses it. */
+  private async dismissDashboardAnnouncement(): Promise<void> {
+    const layout = this.page.frames().find((frame) => frame.url().includes('fe-oss-shell-layout'));
+    if (layout === undefined) return;
+    const dialog = layout.locator('[role="dialog"][aria-modal="true"]').filter({ visible: true });
+    const count = await dialog.count();
+    if (count === 0) return;
+    if (count > 1) throw new PortalError('CONTRACT_MISMATCH', 'The business dashboard showed more than one modal announcement.');
+    await (await requireUnique(dialog.locator('img.cerrar-modal-vertical'), 'announcement close control')).click();
+    try {
+      await dialog.waitFor({ state: 'hidden', timeout: 10_000 });
+    } catch {
+      throw new PortalError('READINESS_TIMEOUT', 'The dashboard announcement did not close. Inspect the business dashboard before retrying.');
+    }
+  }
+
+  /**
+   * The announcement is optional and may open after the shortcut renders, and shortcuts near the
+   * bottom-right can sit under the fixed help-chat bubble. Playwright dispatches no click while the
+   * target is covered, so short attempts are safe for this read-only navigation.
+   */
+  private async clickDashboardShortcut(shortcut: Locator, description: string): Promise<void> {
+    const deadline = Date.now() + 30_000;
+    while (Date.now() < deadline) {
+      await this.dismissDashboardAnnouncement();
+      await shortcut.evaluate((element) => { element.scrollIntoView({ block: 'center' }); });
+      try {
+        await shortcut.click({ timeout: 2_000 });
+        return;
+      } catch (error: unknown) {
+        if (!(error instanceof Error && error.name === 'TimeoutError')) {
+          throw new PortalError('CONTRACT_MISMATCH', `The ${description} could not be clicked. Inspect the business dashboard before retrying.`);
+        }
+      }
+    }
+    throw new PortalError('READINESS_TIMEOUT', `The ${description} stayed covered or not clickable. Inspect the business dashboard before retrying.`);
+  }
+
   private async openRecipients(businessId: string): Promise<Frame> {
     const { dashboard } = await this.openBusiness(businessId);
-    await (await requireUnique(dashboard.getByText('Mis Destinatarios', { exact: false }), 'Mis Destinatarios control')).click();
+    await this.clickDashboardShortcut(await requireUnique(dashboard.getByText('Mis Destinatarios', { exact: false }), 'Mis Destinatarios control'), 'Mis Destinatarios control');
     const recipients = await this.waitForFrame('fe-destinatarios-pyme');
     await requireUnique(recipients.getByRole('link', { name: 'Autorizados', exact: true }), 'authorized recipients tab');
     return recipients;
@@ -526,7 +564,7 @@ export class PlaywrightBciPymePortal implements BciPymePortal {
   private async openMovementsFrom(dashboard: Frame): Promise<{ movements: Frame }> {
     const movementLink = dashboard.getByText('Mis Movimientos', { exact: false }).first();
     await movementLink.waitFor({ state: 'visible', timeout: 30_000 });
-    await movementLink.click();
+    await this.clickDashboardShortcut(movementLink, 'Mis Movimientos control');
     const movements = await this.waitForFrame('fe-oss-shell-mov-cuenta');
     await movements.waitForTimeout(8_000);
     return { movements };
@@ -592,13 +630,13 @@ export class PlaywrightBciPymePortal implements BciPymePortal {
   }
 }
 
-/** The selector can serve a system-error page with HTTP 200 at its normal URL. */
+/** A missing or expired session makes the selector serve a system-error page with HTTP 200 at its normal URL. */
 async function requireNoSelectorSystemError(page: Page): Promise<void> {
   if (/vistaSelectorConvenio\.jsf/iu.test(page.url())
     && await page.getByText('Algo salió mal', { exact: true }).isVisible()) {
     throw new PortalError(
-      'PROVIDER_ERROR',
-      'BCI displayed a system-error page instead of the business selector. Authentication cannot be established from this page. Check portal availability in the browser before retrying businesses list; do not repeat login based on this error.',
+      'SESSION_EXPIRED',
+      'BCI displayed its system-error page instead of the business selector, which it serves when the saved session is missing or expired. Run auth login explicitly once; if this page persists right after a successful login, check portal availability in the browser.',
       { recovery: { stage: 'session-check', contractRef: 'services/bci-pyme/docs/contracts/read-only-browser-flow.json#provider-error' } },
     );
   }

@@ -92,6 +92,16 @@ presence/expiry metadata and private-file permissions first, then the supported
 browser flow; never dump cookie values or reset the authentication breaker. A real
 expired-session response still requires explicit authentication.
 
+## 2026-09-22 expired session shows the same system-error page
+
+A session saved eight days earlier made `businesses list` (and every recipient
+command, which checks the session first) receive the same HTTP 200 selector
+system-error page. One explicit `auth login` followed by the same `businesses list`
+succeeded, so this page means missing or expired session state, not a portal change.
+Session reads now return `SESSION_EXPIRED` for it. Login never uses this check. If
+the page appears again right after a successful login, suspect the session
+checkpoint (see above) or a portal outage, not credentials.
+
 During live batch export, returning to the selector also exposed a readiness race.
 A headed observation showed an initially empty accessibility tree, followed by the
 normal business table without another operator action. The selector's own inline
@@ -135,9 +145,9 @@ display. This keeps normal browser rendering while making browser windows invisi
 ## 2026-09-17 classification before parsing
 
 The adapter now classifies the page against the JSON contract before reporting a
-missing row or control. A system-error page at the selector route returns
-`PROVIDER_ERROR`; the expired-session route or `Ingresar` button returns
-`SESSION_EXPIRED`; a structure that differs from the recorded state returns
+missing row or control. A system-error page at the selector route, the
+expired-session route, or an `Ingresar` button returns `SESSION_EXPIRED` (the
+selector error page was reclassified on 2026-09-22; see below); a structure that differs from the recorded state returns
 `CONTRACT_MISMATCH` with the smallest diff (for example, expected at least one
 visible business row, observed zero) and `nextCommand` pointing at observe mode; a
 matching structure whose readiness marker never appears returns `READINESS_TIMEOUT`.

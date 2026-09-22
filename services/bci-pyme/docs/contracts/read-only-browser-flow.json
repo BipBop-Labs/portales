@@ -78,7 +78,7 @@
   "stopConditions": [
     "login rejection or ambiguity before acceptance",
     "CAPTCHA, MFA, Turnstile, rate limiting, or account block",
-    "system-error page at the selector route (provider error, not a missing row)",
+    "system-error page at the selector route (missing or expired session, not a missing row)",
     "missing or duplicate business rows or IDs",
     "selected business not present in current discovery",
     "missing dashboard or movements frame",

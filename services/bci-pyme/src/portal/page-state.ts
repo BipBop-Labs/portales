@@ -86,7 +86,8 @@ export async function requireBciPageState(page: Page, operation: string, expecte
     case 'blocked':
       throw new PortalError('ACCOUNT_BLOCKED', 'The portal displayed a stop condition (block, additional verification, or rate limit).', { recovery: { ...recovery, nextAction: 'Stop. Requires human/provider resolution; do not retry or re-login.' } });
     case 'provider-error':
-      throw new PortalError('PROVIDER_ERROR', 'BCI served its system-error page instead of the expected page. Authentication cannot be established from this page.', { recovery: { ...recovery, nextAction: 'Check portal availability in a browser before retrying; do not repeat login based on this error.' } });
+      // Observed 2026-09-22: BCI serves this page when the saved session is missing or expired.
+      throw new PortalError('SESSION_EXPIRED', 'BCI served its system-error page, which it does when the saved session is missing or expired.', { recovery: { ...recovery, nextCommand: `portales bci-pyme auth login --profile ${options.profile ?? '<profile>'}`, nextAction: 'Run auth login explicitly once; if this page persists right after a successful login, check portal availability in a browser.' } });
     case 'login-page':
       throw new PortalError('SESSION_EXPIRED', 'The BCI session is not authenticated. Run auth login explicitly.', { recovery: { ...recovery, nextCommand: `portales bci-pyme auth login --profile ${options.profile ?? '<profile>'}` } });
     case 'loading':

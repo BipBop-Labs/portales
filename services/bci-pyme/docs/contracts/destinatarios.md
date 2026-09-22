@@ -155,3 +155,41 @@ one explicitly requested recipient disappeared from the visible table, and the t
 verified absence from both status listings before returning `outcome: deleted`.
 No BciPass was required for this deletion. No live account data is kept in this
 contract or tests; fixture identities are authored independently as synthetic.
+
+## Dashboard announcement and help bubble (2026-09-22)
+
+`destinatarios options` failed with the CLI's generic `PORTAL_CHANGED` ("could not be
+completed safely"), which hides raw Playwright errors. A temporary local script calling
+the compiled adapter showed the real error: `locator.click` timing out on the
+`Mis Destinatarios` shortcut. Two things covered it: a new modal announcement in
+the `fe-oss-shell-layout` frame (`[role=dialog][aria-modal=true]`, closed by its single
+`img.cerrar-modal-vertical`), and the fixed `embeddedServiceHelpButton` help bubble,
+which overlapped the bottom-right `Accesos Directos` card. A Playwright trial click
+(`click({ trial: true })`) names whichever element intercepts the click without
+clicking.
+
+The announcement is optional. It appeared about 20 s after business selection, at the
+same time as the shortcut, in one session and was absent from a later one. The
+adapter's `clickDashboardShortcut` therefore makes short click attempts for up to
+30 s. Before each attempt it closes the announcement if one is visible, then scrolls
+the shortcut to the viewport center. Playwright dispatches no click while the target
+is covered, so repeating this read-only navigation cannot double-submit. `Mis
+Movimientos` uses the same helper. Verified both with and without the announcement
+by running `destinatarios options` through the public CLI.
+
+## Saved names are title-cased (2026-09-22)
+
+A public `create` submitted an uppercase company name once and then failed
+verification with `Saved recipient details did not match`. Reconciliation through
+`destinatarios list` showed exactly one pending recipient: RUT, bank, account, alias
+and email matched, and BCI had saved the name in title case. Alias and email came back
+unchanged. Name comparisons (duplicate check and post-write verification) now ignore
+case only. After the fix, a fresh `prepare` for that business reported the existing
+recipient with `willWrite: false`, and a second business's `create` returned `outcome:
+pending` directly.
+
+In one run, `create` stopped before submission with `Expected exactly one authorized
+recipients tab`. No `verifying-created-recipient` stage was emitted, and the listing
+showed no new recipient. Six repeated read-only runs of the same pre-submit steps did
+not reproduce it, and the next fresh preview plus `create` succeeded. If it recurs,
+capture the destinatarios frame's visible tabs and headings before changing selectors.

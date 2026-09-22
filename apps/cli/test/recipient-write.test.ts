@@ -6,13 +6,13 @@ import { runCli } from '../src/cli.js';
 import { PortalError } from '../../../services/bci-pyme/src/errors.js';
 import type { RecipientProgress } from '../../../services/bci-pyme/src/portal/types.js';
 
-it('previews without writes, binds confirmation, waits for verification, and saves a pending recipient once', async () => {
+it('previews without writes, binds confirmation, waits for verification, and saves a pending recipient once, accepting BCI title-cased names', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'portales-synthetic-recipient-'));
   try {
     const input = join(directory, 'input.json');
-    const target = { businessId: 'synthetic-business', bankId: 'synthetic-bank', name: 'Synthetic Recipient', alias: 'Synthetic', rut: '12.345.678-5', accountNumber: '0000000123', email: '', favorite: false };
+    const target = { businessId: 'synthetic-business', bankId: 'synthetic-bank', name: 'SYNTHETIC RECIPIENT SPA', alias: 'Synthetic', rut: '12.345.678-5', accountNumber: '0000000123', email: '', favorite: false };
     await writeFile(input, JSON.stringify(target), { mode: 0o600 });
-    const recipient = { status: 'pending', name: target.name, alias: target.alias, rut: target.rut, bank: 'Synthetic Bank', accountNumber: '123', email: '' };
+    const recipient = { status: 'pending', name: 'Synthetic Recipient Spa', alias: target.alias, rut: target.rut, bank: 'Synthetic Bank', accountNumber: '123', email: '' };
     let saved = false;
     let approve = () => { /* assigned by promise constructor */ };
     let notifyWaiting = () => { /* assigned by promise constructor */ };

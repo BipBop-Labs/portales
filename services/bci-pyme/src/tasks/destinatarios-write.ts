@@ -33,6 +33,9 @@ function matchingRecipient(recipients: Recipient[], target: Selection, bank: str
   return matches[0];
 }
 
+// BCI saves names in title case (observed 2026-09-22), so compare names case-insensitively.
+const sameName = (saved: string, requested: string) => saved.toLocaleUpperCase('es-CL') === requested.toLocaleUpperCase('es-CL');
+
 /** Preview and execution share validation, discovery, duplicate checks and confirmation. */
 export async function writeDestinatario(
   input: { profile: string; action: Action; value: unknown; preview: boolean; confirmation?: string },
@@ -53,7 +56,7 @@ export async function writeDestinatario(
   }
   if (input.action === 'create' && current) {
     const creation = createSchema.parse(target);
-    if (current.name !== creation.name || current.alias !== creation.alias || current.email !== creation.email) {
+    if (!sameName(current.name, creation.name) || current.alias !== creation.alias || current.email !== creation.email) {
       throw new PortalError('REMOTE_STATE_AMBIGUOUS', 'This RUT, bank and account already exist with different details. Inspect destinatarios list; no duplicate was created.');
     }
   }
@@ -84,7 +87,7 @@ export async function writeDestinatario(
   }
   if (input.action === 'create') {
     const creation = createSchema.parse(target);
-    if (verified.name !== creation.name || verified.alias !== creation.alias || verified.email !== creation.email) {
+    if (!sameName(verified.name, creation.name) || verified.alias !== creation.alias || verified.email !== creation.email) {
       throw new PortalError('REMOTE_STATE_AMBIGUOUS', 'Saved recipient details did not match. Inspect destinatarios list; do not submit again.');
     }
   }
