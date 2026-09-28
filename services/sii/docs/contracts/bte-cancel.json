@@ -1,0 +1,111 @@
+{
+  "schemaVersion": "1",
+  "service": "sii",
+  "operations": [
+    "bte.cancel-options",
+    "bte.cancel-prepare",
+    "bte.cancel"
+  ],
+  "observedAt": "2026-09-28",
+  "explanation": "bte-cancel.md",
+  "effect": "destructive",
+  "pageStates": {
+    "source": {
+      "description": "Observed cancellation TMBANU_PrevalidaAnulacion",
+      "routeFragments": [
+        "/cgi_IMT/TMBANU_PrevalidaAnulacion.cgi"
+      ],
+      "controls": [
+        {
+          "css": "input[name=\"Txt_BoletaAnular\"]",
+          "expectedVisibleCount": 1
+        },
+        {
+          "css": "input[name=\"OptCausaAnulacion\"][type=\"radio\"]",
+          "expectedVisibleCount": 3
+        },
+        {
+          "css": "input[name=\"cmdContinuar\"]",
+          "expectedVisibleCount": 1
+        }
+      ],
+      "kind": "result"
+    },
+    "preview": {
+      "description": "Observed cancellation TMBANU_ConfirmarAnulacion",
+      "routeFragments": [
+        "/cgi_IMT/TMBANU_ConfirmarAnulacion.cgi"
+      ],
+      "controls": [
+        {
+          "css": "input[name=\"BtnConfirmar\"]",
+          "expectedVisibleCount": 1
+        },
+        {
+          "css": "input[name=\"BtnSalir\"]",
+          "expectedVisibleCount": 1
+        }
+      ],
+      "kind": "result"
+    }
+  },
+  "flow": [
+    {
+      "step": "goto",
+      "destination": "official issued BHE cancellation menu"
+    },
+    {
+      "step": "expect-state",
+      "state": "source"
+    },
+    {
+      "step": "read",
+      "what": "principal and complete reason options"
+    },
+    {
+      "step": "fill",
+      "css": "input[name=\"Txt_BoletaAnular\"]",
+      "from": "folio"
+    },
+    {
+      "step": "click",
+      "css": "input[name=\"cmdContinuar\"]"
+    },
+    {
+      "step": "expect-state",
+      "state": "preview"
+    },
+    {
+      "step": "read",
+      "what": "document identity, totals, cause and final dialog warning"
+    },
+    {
+      "step": "stop",
+      "reason": "Preparation never clicks the final confirmation control."
+    }
+  ],
+  "successConditions": [
+    "Exact confirmed preview and one final submission.",
+    "Issued monthly row matches document identity and amounts with ANUL state and annulment date."
+  ],
+  "stopConditions": [
+    "Changed source, preview, identity, warning, or document.",
+    "Expired, stale, consumed or incorrectly confirmed snapshot.",
+    "Authentication, CAPTCHA, authorization or rate limit.",
+    "Ambiguous write: reconcile without resubmission."
+  ],
+  "supportedBranches": [
+    "Principal-issued active boleta with domestic identified recipient and automatic SII recipient notification."
+  ],
+  "responseFingerprints": {
+    "preview": [
+      "xml_values.nro_boleta",
+      "xml_values.cod_barras",
+      "xml_values.codigo_causa",
+      "xml_values.anulada",
+      "xml_values.Monto_Boleta",
+      "xml_values.Monto_Retencion",
+      "xml_values.Monto_Liquido"
+    ]
+  }
+}

@@ -16,6 +16,7 @@ import type { Runtime } from '../../../../services/sii/src/seams/index.js';
 import { authStatus, logout } from '../../../../services/sii/src/tasks/auth.js';
 import { rcvList, rcvListAll, rcvSummary } from '../../../../services/sii/src/tasks/rcv.js';
 import { btePreparePrevious, bteEmitPrevious } from '../../../../services/sii/src/tasks/bte-previous.js';
+import { bteCancellationOptions, btePrepareCancellation, bteCancel } from '../../../../services/sii/src/tasks/bte-cancel.js';
 import { bteDownload } from '../../../../services/sii/src/tasks/bte-download.js';
 import { BTE_COMUNAS, bteOptions, bteEmit, bteEmitPreview, bteList, type BteEmitArgs } from '../../../../services/sii/src/tasks/bte.js';
 import {
@@ -318,6 +319,36 @@ const commands: Spec[] = [
     run: (input, context) => withScope(context, profileOf(input), 'boletas-de-honorarios-btebhe', async (runtime) => {
       const meta = await principalScope(runtime, profileOf(input));
       return { ...await bteList(runtime, { periodo: input.positionals.periodo as string, side: flag(input, 'recibidas') ? 'RECIBIDAS' : 'EMITIDAS' }), ...meta };
+    }),
+  },
+  {
+    service: 'sii', path: ['bte', 'cancel-options'], summary: 'Discover live cancellation causes for issued honorarios.',
+    effect: 'read', auth: 'session', browser: 'headless', profile: 'optional',
+    output: { description: '{ field, options: [{ id, label }] }' }, errors: ['AUTHORIZATION_DENIED', ...sessionErrors],
+    contractRef: 'services/sii/docs/contracts/bte-cancel.md', contractVersion: '2026-09-28',
+    run: (input, context) => withScope(context, profileOf(input), 'boletas-de-honorarios-btebhe', bteCancellationOptions),
+  },
+  {
+    service: 'sii', path: ['bte', 'cancel-prepare'], summary: 'Preview cancellation of one active issued boleta; never submits the annulment.',
+    effect: 'read', auth: 'session', browser: 'headless', profile: 'optional', positionals: [periodoPositional],
+    options: [
+      { name: 'folio', kind: 'integer', required: true, description: 'Active issued folio.', discoverWith: 'portales sii bte list <periodo> --profile <profile>' },
+      { name: 'causa', kind: 'string', required: true, description: 'Live cancellation cause ID.', discoverWith: 'portales sii bte cancel-options --profile <profile>' },
+    ],
+    output: { description: '{ anulada: false, snapshot, fingerprint, expiresAt, preview, supportedScopes }' },
+    errors: ['INVALID_INPUT', 'AUTHORIZATION_DENIED', ...sessionErrors], contractRef: 'services/sii/docs/contracts/bte-cancel.md', contractVersion: '2026-09-28',
+    run: (input, context) => withScope(context, profileOf(input), 'boletas-de-honorarios-btebhe', runtime => btePrepareCancellation(runtime, { periodo: input.positionals.periodo as string, folio: num(input, 'folio') ?? 0, causa: str(input, 'causa') ?? '' })),
+  },
+  {
+    service: 'sii', path: ['bte', 'cancel'], summary: 'Confirm a prepared annulment once and verify the issued listing. SII notifies the recipient.',
+    effect: 'destructive', auth: 'session', browser: 'headless', profile: 'optional',
+    options: [{ name: 'snapshot', kind: 'string', required: true, description: 'Cancellation preparation ID.', discoverWith: 'portales sii bte cancel-prepare <periodo> --folio <folio> --causa <causa> --profile <profile>' }],
+    confirm: { description: 'Exact fingerprint returned by bte cancel-prepare.' },
+    output: { description: '{ anulada: true, verified: true, boleta, causa, notificaReceptor, supportedScopes }' },
+    errors: ['INVALID_INPUT', 'CONFIRMATION_REQUIRED', 'SNAPSHOT_EXPIRED', 'SNAPSHOT_STALE', 'AUTHORIZATION_DENIED', 'REMOTE_STATE_AMBIGUOUS', ...sessionErrors], contractRef: 'services/sii/docs/contracts/bte-cancel.md', contractVersion: '2026-09-28',
+    run: (input, context) => withScope(context, profileOf(input), 'boletas-de-honorarios-btebhe', runtime => {
+      const confirm = str(input, 'confirm');
+      return bteCancel(runtime, { snapshot: str(input, 'snapshot') ?? '', ...(confirm === undefined ? {} : { confirm }) });
     }),
   },
   {

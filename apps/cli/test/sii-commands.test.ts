@@ -159,6 +159,89 @@ describe('SII registry commands', () => {
     expect(posts).toBe(2);
   });
 
+  it('previews cancellation without writing, binds reason and principal, and never repeats an uncertain submission', async () => {
+    // Wholly invented data; these values are independent of every live boleta.
+    let warning = 'SYNTHETIC CANCELLATION WARNING';
+    let state = 'N';
+    let uncertain = false;
+    let submissions = 0;
+    let restores = 0;
+    const store = memoryStore({ session: SESSION, operate: SELF });
+    const session = {
+      goto: (url: string) => Promise.resolve(url),
+      evaluate: (expression: string) => {
+        if (expression.includes('const cancellationState')) return Promise.resolve(null);
+        if (expression.includes('options:')) return Promise.resolve({ principal: SESSION.rut, options: [{ id: '1', label: 'SYNTHETIC CAUSE ONE' }, { id: '2', label: 'SYNTHETIC CAUSE TWO' }, { id: '3', label: 'SYNTHETIC CAUSE THREE' }] });
+        if (expression.includes('notificaReceptor')) return Promise.resolve({ principal: SESSION.rut, folio: 7, codigo: 'SYNTHETIC7', fecha: '2026-09-17', receptor: '76000001-9', totalHonorarios: 1000, retencion: 150, liquido: 850, causa: '3', warning, notificaReceptor: true });
+        if (expression.includes('arr_informe_mensual')) return Promise.resolve({ nroboleta_1: '7', codigobarras_1: 'SYNTHETIC7', fechaemision_1: '17/09/2026', rutreceptor_1: '76000001', dvreceptor_1: '9', nombrereceptor_1: 'SYNTHETIC RECIPIENT', totalhonorarios_1: '1000', honorariosliquidos_1: '850', retencion_emisor_1: '0', retencion_receptor_1: '150', estado_1: state, fechaanulacion_1: state === 'S' ? '17/09/2026' : '' });
+        if (expression.includes('xml_values')) return Promise.resolve({ total_boletas: '1' });
+        throw new Error('Unexpected synthetic browser read.');
+      },
+      submitForm: (input: { button: string; confirmDialog?: string }) => {
+        if (input.button.includes('BtnConfirmar')) {
+          expect(input.confirmDialog).toBe(warning);
+          submissions++;
+          if (uncertain) return Promise.reject(new Error('SYNTHETIC transport failure'));
+          state = 'S';
+        }
+        return Promise.resolve();
+      },
+      close: () => Promise.resolve(),
+    } as unknown as PortalSession;
+    const runtime = fakeRuntime(store, { restore: () => { restores++; return Promise.resolve(session); } });
+    const options = harness(runtime);
+    expect(await runCli(['sii', 'bte', 'cancel-options'], options.deps)).toBe(0);
+    expect(options.result()).toMatchObject({ field: 'causa', options: [{ id: '1' }, { id: '2' }, { id: '3' }] });
+    const prepare = async () => {
+      const h = harness(runtime);
+      expect(await runCli(['sii', 'bte', 'cancel-prepare', '2026-09', '--folio', '7', '--causa', '3'], h.deps)).toBe(0);
+      expect(h.result()).toMatchObject({ anulada: false, preview: { folio: 7, causa: '3', notificaReceptor: true } });
+      return h.result() as { snapshot: string; fingerprint: string };
+    };
+    const first = await prepare();
+    expect(submissions).toBe(0);
+    const before = restores;
+    for (const confirmation of [[], ['--confirm', 'wrong']]) {
+      const h = harness(runtime);
+      expect(await runCli(['sii', 'bte', 'cancel', '--snapshot', first.snapshot, ...confirmation], h.deps)).toBe(8);
+    }
+    expect(restores).toBe(before);
+    const scoped = harness(fakeRuntime(memoryStore({ session: SESSION, operate: SELF })));
+    expect(await runCli(['sii', 'bte', 'cancel', '--snapshot', first.snapshot, '--confirm', first.fingerprint], scoped.deps)).toBe(2);
+    expect(scoped.error()).toMatchObject({ code: 'SNAPSHOT_EXPIRED' });
+    await store.write('session', { ...SESSION, rut: '76000001-9' });
+    const otherPrincipal = harness(runtime);
+    expect(await runCli(['sii', 'bte', 'cancel', '--snapshot', first.snapshot, '--confirm', first.fingerprint], otherPrincipal.deps)).not.toBe(0);
+    expect(otherPrincipal.error()).toMatchObject({ code: 'AUTHORIZATION_DENIED' });
+    await store.write('session', SESSION);
+    warning = 'SYNTHETIC CHANGED WARNING';
+    const stale = harness(runtime);
+    expect(await runCli(['sii', 'bte', 'cancel', '--snapshot', first.snapshot, '--confirm', first.fingerprint], stale.deps)).toBe(2);
+    expect(stale.error()).toMatchObject({ code: 'SNAPSHOT_STALE' });
+    expect(submissions).toBe(0);
+    warning = 'SYNTHETIC CANCELLATION WARNING';
+    const success = harness(runtime);
+    expect(await runCli(['sii', 'bte', 'cancel', '--snapshot', first.snapshot, '--confirm', first.fingerprint], success.deps)).toBe(0);
+    expect(success.result()).toMatchObject({ anulada: true, verified: true, boleta: { folio: 7, estado: 'ANUL', fechaAnulacion: '17/09/2026' } });
+    expect(submissions).toBe(1);
+    state = 'N'; // A separate, independent synthetic scenario.
+    const second = await prepare();
+    uncertain = true;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const h = harness(runtime);
+      expect(await runCli(['sii', 'bte', 'cancel', '--snapshot', second.snapshot, '--confirm', second.fingerprint], h.deps)).toBe(7);
+      expect(h.error()).toMatchObject({ code: 'REMOTE_STATE_AMBIGUOUS' });
+    }
+    expect(submissions).toBe(2);
+    const third = await prepare();
+    const key = `bte-cancel-${third.snapshot}`;
+    await store.write(key, { ...await store.read<Record<string, unknown>>(key), expiresAt: '2026-09-17T11:00:00Z' });
+    const expired = harness(runtime);
+    expect(await runCli(['sii', 'bte', 'cancel', '--snapshot', third.snapshot, '--confirm', third.fingerprint], expired.deps)).toBe(2);
+    expect(expired.error()).toMatchObject({ code: 'SNAPSHOT_EXPIRED' });
+    expect(submissions).toBe(2);
+  });
+
   it('lists and downloads received documents through the observed MIPYME route with text validation', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'portales-sii-received-'));
     await chmod(directory, 0o700);

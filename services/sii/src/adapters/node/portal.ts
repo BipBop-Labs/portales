@@ -98,9 +98,17 @@ class PlaywrightPortalSession implements PortalSession {
     return (await this.page.evaluate(expression)) as T;
   }
 
-  async submitForm(input: { fields: Record<string, string>; button: string; expectedPath: string }): Promise<void> {
+  async submitForm(input: { fields: Record<string, string>; button: string; expectedPath: string; confirmDialog?: string }): Promise<void> {
     for (const [name, value] of Object.entries(input.fields)) {
-      const control = this.page.locator(`[name=${JSON.stringify(name)}]`);
+      const controls = this.page.locator(`[name=${JSON.stringify(name)}]`);
+      const radios = this.page.locator(`input[type="radio"][name=${JSON.stringify(name)}]`);
+      if (await radios.count() > 0) {
+        const choice = this.page.locator(`input[type="radio"][name=${JSON.stringify(name)}][value=${JSON.stringify(value)}]`);
+        if (await choice.count() !== 1) throw new PortalError('INVALID_INPUT', 'Expected one live radio choice for the requested value.');
+        await choice.check();
+        continue;
+      }
+      const control = controls;
       if (await control.count() !== 1) throw new PortalError('CONTRACT_MISMATCH', 'Expected one form control for an observed field.');
       if (await control.evaluate((element) => element.tagName) === 'SELECT') {
         if (!(await control.locator('option').evaluateAll((options) => options.map((option) => (option as HTMLOptionElement).value))).includes(value)) {
@@ -112,7 +120,13 @@ class PlaywrightPortalSession implements PortalSession {
     const button = this.page.locator(input.button);
     if (await button.count() !== 1 || !await button.isVisible()) throw new PortalError('CONTRACT_MISMATCH', 'Expected one visible submit control.');
     const rejected: boolean[] = [];
-    const dismiss = async (dialog: import('playwright').Dialog) => { rejected.push(true); await dialog.dismiss(); };
+    let accepted = 0;
+    const dismiss = async (dialog: import('playwright').Dialog) => {
+      if (input.confirmDialog !== undefined && dialog.type() === 'confirm' && dialog.message() === input.confirmDialog && accepted === 0 && rejected.length === 0) {
+        accepted++;
+        await dialog.accept();
+      } else { rejected.push(true); await dialog.dismiss(); }
+    };
     const navigation = { status: 0 };
     const observeStatus = (response: import('playwright').Response) => { if (response.request().isNavigationRequest() && response.frame() === this.page.mainFrame()) navigation.status = response.status(); };
     this.page.on('response', observeStatus);
@@ -121,6 +135,7 @@ class PlaywrightPortalSession implements PortalSession {
       await button.click();
       if (rejected.length > 0) throw new PortalError('INVALID_INPUT', 'The portal rejected the form or requested an additional confirmation; no retry was made.');
       await this.page.waitForURL((url) => url.pathname === input.expectedPath || url.hostname === LOGIN_HOST, { waitUntil: 'load', timeout: 30_000 });
+      if (input.confirmDialog !== undefined && accepted !== 1) throw new PortalError('CONTRACT_MISMATCH', 'Expected exactly one matching confirmation dialog.');
       requireNavigationSuccess(navigation.status);
       const wall = formLoginWallError(this.page.url());
       if (wall) throw wall;
