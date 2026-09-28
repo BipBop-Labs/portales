@@ -6,30 +6,26 @@
   "bin": {
     "portales": "dist/apps/cli/src/main.js"
   },
-  "workspaces": [
-    "apps/*",
-    "packages/*",
-    "services/*"
-  ],
   "scripts": {
     "build": "tsc -b && node scripts/write-build-info.mjs",
     "lint": "eslint .",
     "test": "vitest run",
     "typecheck": "tsc -b --pretty false",
-    "update": "git pull --ff-only && npm ci && npm run build"
+    "update": "git pull --ff-only && pnpm install --frozen-lockfile --prod=false && pnpm run build"
   },
   "devDependencies": {
-    "@eslint/js": "^9.35.0",
-    "@types/node": "^24.3.1",
-    "eslint": "^9.35.0",
-    "typescript": "^5.9.2",
-    "typescript-eslint": "^8.42.0",
-    "vitest": "^5.0.0"
+    "@eslint/js": "^9.39.5",
+    "@types/node": "^24.19.0",
+    "eslint": "^9.39.5",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.70.1",
+    "vitest": "^5.0.2"
   },
   "dependencies": {
-    "jszip": "^3.10.1",
-    "playwright": "^1.55.0",
-    "zod": "^4.4.3"
+    "jszip": "^3.10.2",
+    "playwright": "^1.63.0",
+    "zod": "^4.6.5"
   },
-  "version": "0.1.0"
+  "version": "0.1.0",
+  "packageManager": "pnpm@11.3.0"
 }

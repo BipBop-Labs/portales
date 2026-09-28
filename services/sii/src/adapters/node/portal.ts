@@ -41,8 +41,8 @@ async function loadChromium(): Promise<BrowserType> {
     if (notFound && err instanceof Error && err.message.includes('playwright')) {
       throw new Error(
         'El PortalDriver por defecto necesita `playwright` (peer opcional, ADR-016). ' +
-          'Instálalo en el proyecto consumidor: `npm i playwright` y luego ' +
-          '`npx playwright install chromium`.',
+          'Instálalo en el proyecto consumidor: `pnpm add playwright` y luego ' +
+          '`pnpm exec playwright install chromium`.',
       );
     }
     throw err;

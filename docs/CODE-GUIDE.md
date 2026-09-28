@@ -129,7 +129,7 @@ Anything downloaded goes through `validateDownloadedFile` (signature, structure,
 ## 10. Checks before you say it is done
 
 ```bash
-npm run build && npm run lint && npm test
+pnpm run build && pnpm run lint && pnpm test
 portales contract validate
 portales doctor <service> --profile <name> --json
 portales <service> verify --profile <name> --live   # read-only, when authorized

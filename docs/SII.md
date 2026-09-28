@@ -3,9 +3,9 @@
 - Slug: `sii`
 - Location: `services/sii`
 - Source of the initial implementation: selected MIT-licensed modules from [`BipBop-Labs/sii`](https://github.com/BipBop-Labs/sii)
-- Runtime: the Portales npm/TypeScript toolchain
+- Runtime: the Portales pnpm/TypeScript toolchain
 
-SII is compiled directly into Portales. It is not a submodule, subprocess, pnpm workspace, or separately installed CLI. `services/sii/THIRD_PARTY_LICENSE.md` preserves the original license and attribution.
+SII is compiled directly into Portales. It is not a submodule, subprocess, separate workspace package, or separately installed CLI. `services/sii/THIRD_PARTY_LICENSE.md` preserves the original license and attribution.
 
 Only the capabilities exercised by Portales are included:
 

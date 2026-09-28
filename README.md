@@ -18,16 +18,16 @@ Service specifications:
 
 ## Setup
 
-One supported installation path:
+Use the pnpm version pinned in `package.json`. One supported installation path:
 
 ```bash
 git clone https://github.com/BipBop-Labs/portales.git
 cd portales
-./scripts/install.sh          # npm ci, npm run build, symlink ~/.local/bin/portales
+./scripts/install.sh          # pnpm install --frozen-lockfile --prod=false, pnpm run build, symlink ~/.local/bin/portales
 portales doctor --json        # local readiness: build, Chromium, Xvfb, pdftotext, keyring, permissions
 ```
 
-Update with `npm run update` (`git pull --ff-only && npm ci && npm run build`). Portales never updates itself during a portal operation; `portales version --json` and `doctor` report a stale build.
+Update with `pnpm run update` (`git pull --ff-only && pnpm install --frozen-lockfile --prod=false && pnpm run build`). `pnpm install --frozen-lockfile` preserves the locked dependency versions and fails if the manifest and lockfile disagree. Use `pnpm update` to intentionally refresh dependencies. Portales never updates itself during a portal operation; `portales version --json` and `doctor` report a stale build.
 
 Discover capabilities without a profile or a portal:
 

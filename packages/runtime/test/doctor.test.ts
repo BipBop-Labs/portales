@@ -22,7 +22,7 @@ describe('doctor', () => {
     const report = await runDoctor({ profile: 'testing' }, probes({
       version: vi.fn().mockResolvedValue({ packageVersion: '0.1.0', commit: 'abc', builtAt: '2026-09-17T00:00:00Z', builtCommit: 'old', sourceCheckout: '/s', distPath: '/s/dist', stale: true, staleReasons: ['commit-differs-from-build'], node: 'v26.0.0' }),
     }));
-    expect(report.checks.find((check) => check.name === 'build')).toMatchObject({ status: 'warn', nextAction: 'npm run update' });
+    expect(report.checks.find((check) => check.name === 'build')).toMatchObject({ status: 'warn', nextAction: 'pnpm run update' });
     expect(report.status).toBe('warn');
     expect(report.live).toBe(false);
   });

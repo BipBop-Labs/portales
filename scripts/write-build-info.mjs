@@ -13,4 +13,4 @@ try {
   commit = null;
 }
 mkdirSync(join(root, 'dist'), { recursive: true });
-writeFileSync(join(root, 'dist', 'build-info.json'), `${JSON.stringify({ version: pkg.version ?? '0.0.0', commit, builtAt: new Date().toISOString(), node: process.version, builtBy: 'npm run build' })}\n`);
+writeFileSync(join(root, 'dist', 'build-info.json'), `${JSON.stringify({ version: pkg.version ?? '0.0.0', commit, builtAt: new Date().toISOString(), node: process.version, builtBy: 'pnpm run build' })}\n`);

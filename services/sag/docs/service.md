@@ -77,5 +77,5 @@ schemas, redirects, missing catalogs, or browser failures use `PORTAL_CHANGED`.
 No automatic retries occur. Correct local inputs before execution; observe and
 repair changed contracts before another live attempt. There is no persistent log.
 
-Build with `npm run build`; live verification uses the public `options` command.
+Build with `pnpm run build`; live verification uses the public `options` command.
 Chrome must be installed for Playwright's `chrome` channel.

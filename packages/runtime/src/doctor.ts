@@ -140,7 +140,7 @@ export async function runDoctor(input: { service?: string; profile: string }, pr
   const services = input.service === undefined ? Object.keys(SERVICES) : [input.service];
   const version = await probes.version();
   checks.push(version.stale
-    ? { name: 'build', status: 'warn', detail: `The executable is stale: ${version.staleReasons.join(', ')}.`, nextAction: 'npm run update' }
+    ? { name: 'build', status: 'warn', detail: `The executable is stale: ${version.staleReasons.join(', ')}.`, nextAction: 'pnpm run update' }
     : { name: 'build', status: 'ok', detail: `Build matches the checkout (${version.packageVersion}).` });
   const major = Number(/^v(\d+)/u.exec(version.node)?.[1] ?? '0');
   checks.push(major >= 22

@@ -30,7 +30,7 @@ portales <service> verify --live --profile <name>   # opt-in, read-only live che
 
 Run records live under `$XDG_STATE_HOME/portales/runs` (0600, bounded retention). They contain stage names, durations, typed error codes, recovery metadata, contract version, browser mode, and artifact descriptors. They never contain credentials, cookies, HTML, request bodies, account data, or document contents. Raw STDERR is JSON lines for every event and error; unexpected process crashes may still print plain text.
 
-The error envelope already carries `nextCommand` and `contractRef`; run that command before searching source. `version --json` and `doctor` report a stale build; rebuild with `npm run update` (never during a portal operation).
+The error envelope already carries `nextCommand` and `contractRef`; run that command before searching source. `version --json` and `doctor` report a stale build; rebuild with `pnpm run update` (never during a portal operation).
 
 ## Adding diagnostic context
 
