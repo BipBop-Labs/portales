@@ -11,6 +11,7 @@ import { LOGIN_HOST, loginUrl } from '../../config/index.js';
 import { LoginFailedError } from '../../errors/index.js';
 import { parseSiiLoginError } from '../../auth/login-error.js';
 import { charsetOf, formLoginWallError, nonJsonResponseError } from './response.js';
+import { PortalError } from '../../../../../packages/runtime/src/errors.js';
 import type {
   BinaryRequest,
   BinaryResponse,
@@ -70,6 +71,13 @@ async function readLoginError(page: Page): Promise<string> {
   }
 }
 
+function requireNavigationSuccess(status: number): void {
+  if (status === 401) throw new PortalError('SESSION_EXPIRED', 'SII rejected the session.');
+  if (status === 403) throw new PortalError('AUTHORIZATION_DENIED', 'SII denied access.');
+  if (status === 429) throw new PortalError('RATE_LIMITED', 'SII rate limited the request; no retry was made.');
+  if (status >= 400) throw new PortalError('PROVIDER_ERROR', 'SII returned an HTTP error.');
+}
+
 /** A session owns its browser; close() tears the whole instance down. */
 class PlaywrightPortalSession implements PortalSession {
   constructor(
@@ -81,12 +89,45 @@ class PlaywrightPortalSession implements PortalSession {
   async goto(url: string): Promise<string> {
     // domcontentloaded is enough: SII serves its state as inline scripts
     // (e.g. DatosCntrNow), which have executed by this point.
-    await this.page.goto(url, { waitUntil: 'domcontentloaded' });
+    const response = await this.page.goto(url, { waitUntil: 'domcontentloaded' });
+    if (response) requireNavigationSuccess(response.status());
     return this.page.url();
   }
 
   async evaluate<T>(expression: string): Promise<T> {
     return (await this.page.evaluate(expression)) as T;
+  }
+
+  async submitForm(input: { fields: Record<string, string>; button: string; expectedPath: string }): Promise<void> {
+    for (const [name, value] of Object.entries(input.fields)) {
+      const control = this.page.locator(`[name=${JSON.stringify(name)}]`);
+      if (await control.count() !== 1) throw new PortalError('CONTRACT_MISMATCH', 'Expected one form control for an observed field.');
+      if (await control.evaluate((element) => element.tagName) === 'SELECT') {
+        if (!(await control.locator('option').evaluateAll((options) => options.map((option) => (option as HTMLOptionElement).value))).includes(value)) {
+          throw new PortalError('INVALID_INPUT', 'The requested value is absent from the live selector.');
+        }
+        await control.selectOption(value);
+      } else await control.fill(value);
+    }
+    const button = this.page.locator(input.button);
+    if (await button.count() !== 1 || !await button.isVisible()) throw new PortalError('CONTRACT_MISMATCH', 'Expected one visible submit control.');
+    const rejected: boolean[] = [];
+    const dismiss = async (dialog: import('playwright').Dialog) => { rejected.push(true); await dialog.dismiss(); };
+    const navigation = { status: 0 };
+    const observeStatus = (response: import('playwright').Response) => { if (response.request().isNavigationRequest() && response.frame() === this.page.mainFrame()) navigation.status = response.status(); };
+    this.page.on('response', observeStatus);
+    this.page.on('dialog', dismiss);
+    try {
+      await button.click();
+      if (rejected.length > 0) throw new PortalError('INVALID_INPUT', 'The portal rejected the form or requested an additional confirmation; no retry was made.');
+      await this.page.waitForURL((url) => url.pathname === input.expectedPath || url.hostname === LOGIN_HOST, { waitUntil: 'load', timeout: 30_000 });
+      requireNavigationSuccess(navigation.status);
+      const wall = formLoginWallError(this.page.url());
+      if (wall) throw wall;
+    } finally {
+      this.page.off('dialog', dismiss);
+      this.page.off('response', observeStatus);
+    }
   }
 
   async requestJson(url: string, options: JsonRequest = {}): Promise<unknown> {

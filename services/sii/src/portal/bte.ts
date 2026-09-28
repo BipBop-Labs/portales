@@ -12,6 +12,7 @@
 //
 // SESSION-KEYED (ADR-005): `rut_arrastre` is keyed to the session PRINCIPAL — a represented
 // RUT does NOT reach the empresa's data (confirmed live #62). The task reads self only.
+import { PortalError } from '../../../../packages/runtime/src/errors.js';
 import { HOSTS, LOGIN_HOST } from '../config/index.js';
 import { BteError, SessionExpiredError } from '../errors/index.js';
 import { Rut } from '../rut/index.js';
@@ -36,10 +37,12 @@ const MAX_PAGINAS = 100;
  *  `usuemisor` = the emitter = self; RECIBIDAS: a self receptor-name field), plus a counterparty
  *  email — and the full own-identity field set is not provably enumerable. So, like F22/F29, BTE
  *  exposes NO `raw`: the curated fields below ARE the tax detail a contador reads; the dropped
- *  fields are own-identity PII / counterparty email / low-value metadata (barcode, comuna). The
+ *  fields are own-identity PII / counterparty email / low-value metadata (comuna). The
  *  report META's `nombre_contribuyente`/`rut_arrastre` are likewise never read. Montos are parsed
  *  from SII's es-CL dot-formatted strings. (CONVENTIONS: drop `raw` when non-curated data is PII.) */
 export interface BteBoleta {
+  /** Document identifier needed for PDF retrieval and post-emission reconciliation. */
+  readonly codigo: string | null;
   readonly folio: number | null;
   /** Emisión/boleta date, `DD/MM/YYYY` verbatim (ADR-004). */
   readonly fecha: string | null;
@@ -175,6 +178,7 @@ function rowsByIndex(arr: Record<string, unknown>): Record<string, unknown>[] {
 // known tax fields by alias and surface NOTHING else (cf. F22's no-raw posture).
 function projectBoleta(row: Record<string, unknown>): BteBoleta {
   return {
+    codigo: asStr(row['codigobarras']),
     folio: asMonto(aliasGet(row, ALIASES.folio)),
     fecha: asStr(aliasGet(row, ALIASES.fecha)),
     contraparteRut: canonicalRut(aliasGet(row, ALIASES.rutDigits), aliasGet(row, ALIASES.dv)),
@@ -276,4 +280,13 @@ export async function fetchBteMensual(
     totales,
     boletas,
   };
+}
+
+/** Issued-row PDF link observed in the monthly report on 2026-09-28.
+ * `enviar=si` displays the PDF viewer's email option; this GET does not send email. */
+export async function fetchBtePdf(session: PortalSession, codigo: string): Promise<Uint8Array> {
+  const url = `${HOSTS.bheCgi}/TMBCOT_ConsultaBoletaPdf.cgi?${new URLSearchParams({ txt_codigobarras: codigo, veroriginal: 'si', origen: 'PROPIOS', enviar: 'si' })}`;
+  const response = await session.requestBinary(url);
+  if (response.status !== 200 || response.contentType?.split(';')[0]?.trim() !== 'application/pdf' || new TextDecoder().decode(response.bytes.slice(0, 5)) !== '%PDF-') throw new PortalError('DOWNLOAD_INVALID', 'The boleta download is not a PDF.');
+  return response.bytes;
 }

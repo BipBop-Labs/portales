@@ -97,6 +97,23 @@ With `--confirm` equal to the gross total it **legally issues** the boleta and r
 código de barras and PDF URL. Emission is never retried. Email delivery via `--enviar` is
 best-effort upstream (response fields not yet live-verified).
 
+### Reuse and download issued boletas
+
+The principal can download an issued PDF and prepare a new boleta from an existing folio:
+
+```text
+portales sii bte list <periodo> --profile <profile>
+portales sii bte download <periodo> --folio <folio> --profile <profile>
+portales sii bte prepare --from-folio <folio> --profile <profile>
+portales sii bte emit --snapshot <snapshot> --confirm <fingerprint> --profile <profile>
+```
+
+Preparation never issues. The SII supplies the current date and reuses recipient, retention and service lines; optional date and complete-line replacements are described by `describe sii bte prepare`. Review every line and amount before confirming. The snapshot expires in 15 minutes, binds the complete preview and principal, and is consumed before the single final submission. A changed preview requires a new preparation; an uncertain issue requires reading the monthly listing, never resending the snapshot.
+
+Downloads require `pdftotext`, verify issuer/recipient/folio, and support the standard private output/destination policy and artifact catalog. `bte.options` exposes region/comuna/retention catalogs for the existing manual workflow; `bte.comunas` remains compatible. The final emission command is classified as destructive, including the legacy manual-input branch.
+
+Observed flow, limitations and verification status: [issued BHE contract](../services/sii/docs/contracts/bte-previous.md). Final legal emission remains pending live verification; development verification stops at the preview.
+
 ## DTE documents
 
 Symmetric document interface (observed 2026-09-17, contract in `services/sii/docs/contracts/dte-recibidos.md`):

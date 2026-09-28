@@ -1,0 +1,54 @@
+{
+  "schemaVersion": "1",
+  "service": "sii",
+  "operations": ["bte.download", "bte.prepare", "bte.emit"],
+  "observedAt": "2026-09-28",
+  "explanation": "bte-previous.md",
+  "effect": "destructive",
+  "pageStates": {
+    "source": {
+      "description": "Select an explicit issued folio; no emission takes place.",
+      "routeFragments": ["/cgi_IMT/TMBECN_ValidaTimbrajeContrib.cgi"],
+      "controls": [
+        {"css": "input[name=\"boleta\"]", "expectedVisibleCount": 1},
+        {"css": "input[name=\"cmdcontinuar\"]", "expectedVisibleCount": 1}
+      ],
+      "kind": "result"
+    },
+    "prefilled": {
+      "description": "Populated previous-boleta recipient, lines and current date.",
+      "routeFragments": ["/cgi_IMT/TMBECN_PresentaDatosBoleta.cgi"],
+      "controls": [
+        {"css": "input[name=\"cmdAceptar\"]", "expectedVisibleCount": 1},
+        {"css": "select[name=\"cbo_domicilio\"]", "expectedVisibleCount": 1},
+        {"css": "select[name=\"cod_region\"]", "expectedVisibleCount": 1},
+        {"css": "select[name=\"cbo_comuna\"]", "expectedVisibleCount": 1}
+      ],
+      "kind": "result"
+    },
+    "preview": {
+      "description": "Server-calculated preview with a separate final issue control.",
+      "routeFragments": ["/cgi_IMT/TMBECN_ConfirmaTimbrajeContrib.cgi"],
+      "controls": [{"css": "input[name=\"cmdconfirmar\"]", "expectedVisibleCount": 1}],
+      "kind": "result"
+    }
+  },
+  "flow": [
+    {"step": "goto", "destination": "official BHE previous-data selection"},
+    {"step": "expect-state", "state": "source"},
+    {"step": "fill", "css": "input[name=\"boleta\"]", "from": "folio"},
+    {"step": "click", "css": "input[name=\"cmdcontinuar\"]"},
+    {"step": "expect-state", "state": "prefilled"},
+    {"step": "read", "what": "source, principal, recipient, selected domicile, retention, date and lines"},
+    {"step": "click", "css": "input[name=\"cmdAceptar\"]"},
+    {"step": "expect-state", "state": "preview"},
+    {"step": "stop", "reason": "Preparation stops before final emission. A confirmed snapshot is a separate destructive operation."}
+  ],
+  "successConditions": ["Prepared intent matches both parties and reconciles with the server preview.", "PDF type, signature, issuer, recipient and folio are verified before publishing.", "Emission success requires matching the issued monthly listing; this final write is not yet live-verified."],
+  "stopConditions": ["Unexpected login, account scope, form action or control cardinality.", "Portal validation dialog, authorization rejection, CAPTCHA or rate limit.", "Expired, changed, incorrectly confirmed or already consumed snapshot.", "Ambiguous emission: reconcile the listing, never resubmit."],
+  "supportedBranches": ["Issued principal-only PDF by month and folio.", "Explicit previous folio with 1..4 lines, optional date and complete line replacements.", "Final issue request is inherited from the existing adapter and remains pending live verification."],
+  "responseFingerprints": {
+    "monthly-issued": ["xml_values.total_boletas", "arr_informe_mensual.nroboleta_<index>", "arr_informe_mensual.codigobarras_<index>"],
+    "preview": ["xml_values.Monto_Boleta", "xml_values.Monto_Retencion", "xml_values.Monto_Liquido", "xml_values.PorcentajeRetencion"]
+  }
+}

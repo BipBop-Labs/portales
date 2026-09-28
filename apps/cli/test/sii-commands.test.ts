@@ -87,6 +87,78 @@ describe('SII registry commands', () => {
     expect(h.error()).toMatchObject({ code: 'INVALID_INPUT', validation: [{ field: 'scope', expected: 'the authenticated principal (supportedScopes: principal)' }] });
   });
 
+  it('prepares a previous boleta, binds confirmation to its preview, and consumes an uncertain issue exactly once', async () => {
+    // Invented independently; no portal response or account data is used here.
+    const intent = { principal: '20000042-0', source: '7', receptor: '76000001-9', nombre: 'SYNTHETIC RECIPIENT', domicilio: 'SYNTHETIC ADDRESS', region: '13', comuna: '15101', retiene: 'RETRECEPTOR', emisorDomicilio: 'synthetic-address', emisorDomicilioLabel: 'SYNTHETIC ISSUER ADDRESS', mostrarDetalle: true, fecha: '2026-09-17', lineas: [{ glosa: 'SYNTHETIC SERVICE', monto: 1000 }] };
+    const preview = { principal: intent.principal, receptor: intent.receptor, totalHonorarios: 1000, retencion: 150, liquido: 850, porcentajeRetencion: '15' };
+    let changed = false;
+    let restored = 0;
+    let posts = 0;
+    let ambiguous = false;
+    const store = memoryStore({ session: SESSION, operate: SELF });
+    const session = {
+      goto: (url: string) => Promise.resolve(url),
+      evaluate: (expression: string) => {
+        if (expression.includes('const contractState')) return Promise.resolve(null);
+        if (expression.includes("getAttribute('action')")) return Promise.resolve(true);
+        if (expression.includes('emisorDomicilioLabel')) return Promise.resolve({ ...intent, ...(changed ? { nombre: 'SYNTHETIC CHANGED RECIPIENT' } : {}) });
+        if (expression.includes("amount('Monto_Boleta')")) return Promise.resolve(preview);
+        if (expression.includes("location.pathname !==")) return Promise.resolve(true);
+        if (expression.includes('xml_values.cod_barras')) return Promise.resolve('SYNTHETIC8');
+        if (expression.includes('arr_informe_mensual')) return Promise.resolve({ nroboleta_1: '8', codigobarras_1: 'SYNTHETIC8', fechaemision_1: '17/09/2026', rutreceptor_1: '76000001', dvreceptor_1: '9', nombrereceptor_1: 'SYNTHETIC RECIPIENT', totalhonorarios_1: '1000', honorariosliquidos_1: '850', retencion_emisor_1: '0', retencion_receptor_1: '150', estado_1: 'N' });
+        if (expression.includes('xml_values')) return Promise.resolve({ total_boletas: '1', suma_honorarios: '1000', suma_retencion_emisor: '0', suma_retencion_receptor: '150', suma_liquido: '850' });
+        throw new Error('Unexpected browser read in synthetic test.');
+      },
+      submitForm: (input: { button: string }) => {
+        if (input.button.includes('cmdconfirmar')) { posts++; if (ambiguous) return Promise.reject(new Error('synthetic transport interruption')); }
+        return Promise.resolve();
+      },
+      close: () => Promise.resolve(),
+    } as unknown as PortalSession;
+    const runtime = fakeRuntime(store, { restore: () => { restored++; return Promise.resolve(session); } });
+    const prepare = async () => {
+      const h = harness(runtime);
+      expect(await runCli(['sii', 'bte', 'prepare', '--from-folio', '7'], h.deps)).toBe(0);
+      expect(h.result()).toMatchObject({ emitida: false, intent, preview: { totalHonorarios: 1000 } });
+      return h.result() as { snapshot: string; fingerprint: string };
+    };
+    const first = await prepare();
+    expect(posts).toBe(0);
+    for (const confirmation of [[], ['--confirm', 'wrong']]) {
+      const h = harness(runtime);
+      expect(await runCli(['sii', 'bte', 'emit', '--snapshot', first.snapshot, ...confirmation], h.deps)).toBe(8);
+    }
+    expect(restored).toBe(1);
+    changed = true;
+    const stale = harness(runtime);
+    expect(await runCli(['sii', 'bte', 'emit', '--snapshot', first.snapshot, '--confirm', first.fingerprint], stale.deps)).toBe(2);
+    expect(stale.error()).toMatchObject({ code: 'SNAPSHOT_STALE' });
+    expect(posts).toBe(0);
+    changed = false;
+    const successful = harness(runtime);
+    expect(await runCli(['sii', 'bte', 'emit', '--snapshot', first.snapshot, '--confirm', first.fingerprint], successful.deps)).toBe(0);
+    expect(successful.result()).toMatchObject({ emitida: true, verified: true, boleta: { folio: 8 } });
+    expect(posts).toBe(1);
+    const second = await prepare();
+    ambiguous = true;
+    for (let i = 0; i < 2; i++) {
+      const h = harness(runtime);
+      expect(await runCli(['sii', 'bte', 'emit', '--snapshot', second.snapshot, '--confirm', second.fingerprint], h.deps)).toBe(7);
+      expect(h.error()).toMatchObject({ code: 'REMOTE_STATE_AMBIGUOUS' });
+    }
+    expect(posts).toBe(2);
+    const otherProfile = harness(fakeRuntime(memoryStore({ session: SESSION, operate: SELF })));
+    expect(await runCli(['sii', 'bte', 'emit', '--snapshot', second.snapshot, '--confirm', second.fingerprint], otherProfile.deps)).toBe(2);
+    expect(otherProfile.error()).toMatchObject({ code: 'SNAPSHOT_EXPIRED' });
+    const third = await prepare();
+    const key = `bte-prepare-${third.snapshot}`;
+    await store.write(key, { ...await store.read<Record<string, unknown>>(key), expiresAt: '2026-09-17T11:00:00Z' });
+    const expired = harness(runtime);
+    expect(await runCli(['sii', 'bte', 'emit', '--snapshot', third.snapshot, '--confirm', third.fingerprint], expired.deps)).toBe(2);
+    expect(expired.error()).toMatchObject({ code: 'SNAPSHOT_EXPIRED' });
+    expect(posts).toBe(2);
+  });
+
   it('lists and downloads received documents through the observed MIPYME route with text validation', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'portales-sii-received-'));
     await chmod(directory, 0o700);

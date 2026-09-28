@@ -236,3 +236,18 @@ export async function bteEmit(runtime: Runtime, args: BteEmitArgs): Promise<BteE
 
 /** Region → comuna codes accepted by `bteEmit` (discoverable selector values). */
 export { COMUNAS as BTE_COMUNAS } from '../portal/bte-comunas.js';
+
+/** Discovery uses the same maintained catalogs as manual emission validation. */
+export async function bteOptions(args: { field?: string; region?: number }) {
+  const { COMUNAS } = await import('../portal/bte-comunas.js');
+  const { invalidInput } = await import('../../../../packages/runtime/src/errors.js');
+  if (args.region !== undefined && COMUNAS[args.region] === undefined) throw invalidInput('Unknown region.', [{ field: '--region', expected: 'id from bte options region', discoverWith: 'portales sii bte options region' }]);
+  const regions = { field: 'region', dependsOn: {}, options: Object.keys(COMUNAS).map(id => ({ id, label: `Región ${id}`, aliases: [] })) };
+  const comunas = Object.entries(COMUNAS).filter(([region]) => args.region === undefined || Number(region) === args.region).map(([region, items]) => ({ field: 'comuna', dependsOn: { region }, options: Object.entries(items).map(([id, label]) => ({ id, label, aliases: [] })) }));
+  const retiene = { field: 'retiene', dependsOn: {}, options: [{ id: 'receptor', label: 'Receptor', aliases: [] }, { id: 'emisor', label: 'Emisor', aliases: [] }] };
+  if (args.field === 'region') return regions;
+  if (args.field === 'comuna') return comunas;
+  if (args.field === 'retiene') return retiene;
+  if (args.field !== undefined) throw invalidInput('Unknown boleta option field.', [{ field: '<field>', expected: 'region | comuna | retiene' }]);
+  return { catalogs: [regions, ...comunas, retiene] };
+}

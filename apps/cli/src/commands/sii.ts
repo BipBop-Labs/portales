@@ -15,7 +15,9 @@ import { createPortalesSiiRuntime, siiDocumentsDir } from '../../../../services/
 import type { Runtime } from '../../../../services/sii/src/seams/index.js';
 import { authStatus, logout } from '../../../../services/sii/src/tasks/auth.js';
 import { rcvList, rcvListAll, rcvSummary } from '../../../../services/sii/src/tasks/rcv.js';
-import { BTE_COMUNAS, bteEmit, bteEmitPreview, bteList, type BteEmitArgs } from '../../../../services/sii/src/tasks/bte.js';
+import { btePreparePrevious, bteEmitPrevious } from '../../../../services/sii/src/tasks/bte-previous.js';
+import { bteDownload } from '../../../../services/sii/src/tasks/bte-download.js';
+import { BTE_COMUNAS, bteOptions, bteEmit, bteEmitPreview, bteList, type BteEmitArgs } from '../../../../services/sii/src/tasks/bte.js';
 import {
   MAX_ITEMS, dteAuthorized, dteBorradorDelete, dteBorradorList, dteBorradorSave, dteEmitidos, dteEmpresas, dtePdf, dtePreviewPdf, dteRecibidoPdf, dteRecibidos,
   type DteBorradorArgs, type DteItem, type FormaPago,
@@ -152,7 +154,7 @@ function facturaArgs(document: FacturaJson, input: ParsedInput): DteBorradorArgs
   };
 }
 
-function bteArgs(input: ParsedInput): BteEmitArgs {
+function bteLineas(input: ParsedInput): BteEmitArgs['lineas'] {
   const raw = input.options.linea;
   const lineas = (Array.isArray(raw) ? raw : []).map((value) => {
     const i = value.indexOf(':');
@@ -163,6 +165,11 @@ function bteArgs(input: ParsedInput): BteEmitArgs {
     }
     return { glosa, monto };
   });
+  return lineas;
+}
+
+function bteArgs(input: ParsedInput): BteEmitArgs {
+  const lineas = bteLineas(input);
   const retiene = (str(input, 'retiene') ?? 'receptor').toUpperCase() as 'RECEPTOR' | 'EMISOR';
   const fecha = str(input, 'fecha');
   const match = fecha === undefined ? undefined : /^(\d{4})-(\d{2})-(\d{2})$/u.exec(fecha);
@@ -314,28 +321,74 @@ const commands: Spec[] = [
     }),
   },
   {
+    service: 'sii', path: ['bte', 'download'], summary: 'Download an issued honorarios PDF by month and folio, verifying issuer, recipient and folio.',
+    effect: 'read', auth: 'session', browser: 'headless', profile: 'optional', positionals: [periodoPositional],
+    options: [{ name: 'folio', kind: 'integer', required: true, description: 'Issued folio.', discoverWith: 'portales sii bte list <periodo> --profile <profile>' }, ...outputOptions],
+    output: { description: 'Verified artifact descriptor + boleta' }, errors: ['INVALID_INPUT', 'LOCAL_DEPENDENCY_MISSING', 'DOWNLOAD_INVALID', ...sessionErrors],
+    contractRef: 'services/sii/docs/contracts/bte-previous.md', contractVersion: '2026-09-28',
+    run: (input, context) => withScope(context, profileOf(input), 'boletas-de-honorarios-btebhe', async runtime => {
+      const output = str(input, 'output'); const destination = str(input, 'destination');
+      context.stage('download');
+      const result = await bteDownload(runtime, { profile: profileOf(input), periodo: input.positionals.periodo as string, folio: num(input, 'folio') ?? 0, ...(output === undefined ? {} : { output }), ...(destination === undefined ? {} : { destination }) });
+      context.stage('verify');
+      const artifact = await context.recordArtifact({ profile: profileOf(input), identifiers: result.identifiers, documentType: result.documentType, extractedAt: new Date().toISOString(), coveredPeriod: result.coveredPeriod, byteCount: result.byteCount, mediaType: result.mediaType, sha256: result.sha256, validationChecks: result.validationChecks, path: result.path });
+      return { ...artifact, boleta: result.boleta, destination: result.destination };
+    }),
+  },
+  {
+    service: 'sii', path: ['bte', 'prepare'], summary: 'Prepare and preview a new boleta from an issued folio; never issues. Snapshot expires in 15 minutes.',
+    effect: 'read', auth: 'session', browser: 'headless', profile: 'optional',
+    options: [
+      { name: 'from-folio', kind: 'integer', required: true, description: 'Previously issued source folio.', discoverWith: 'portales sii bte list <periodo> --profile <profile>' },
+      { name: 'fecha', kind: 'date', description: 'New boleta date (default: current SII date).' },
+      { name: 'linea', kind: 'string', repeatable: true, description: 'Replace all service lines with "<monto>:<glosa>" (1..4); omit to reuse them.' },
+    ],
+    output: { description: '{ emitida: false, snapshot, fingerprint, expiresAt, intent, preview, supportedScopes }' },
+    errors: ['INVALID_INPUT', 'AUTHORIZATION_DENIED', ...sessionErrors], contractRef: 'services/sii/docs/contracts/bte-previous.md', contractVersion: '2026-09-28',
+    run: (input, context) => withScope(context, profileOf(input), 'boletas-de-honorarios-btebhe', runtime => {
+      const fecha = str(input, 'fecha');
+      return btePreparePrevious(runtime, { folio: num(input, 'from-folio') ?? 0, ...(fecha === undefined ? {} : { fecha }), ...(input.options.linea === undefined ? {} : { lineas: bteLineas(input) }) });
+    }),
+  },
+  {
+    service: 'sii', path: ['bte', 'options'], summary: 'Discover region, dependent comuna, and retention choices for manual emission.',
+    effect: 'read', auth: 'public', browser: 'none', profile: 'none',
+    positionals: [{ name: 'field', kind: 'enum', values: ['region', 'comuna', 'retiene'], description: 'Option catalog; omit for all catalogs.' }],
+    options: [{ name: 'region', kind: 'integer', description: 'Parent region for comunas.', discoverWith: 'portales sii bte options region' }],
+    output: { description: 'Option catalogs with canonical IDs and parent dependencies.' }, errors: ['INVALID_INPUT'], contractRef: `${SII_DOCS}#boletas-de-honorarios-btebhe`,
+    run: (input) => { const region = num(input, 'region'); const field = input.positionals.field; return bteOptions({ ...(region === undefined ? {} : { region }), ...(field === undefined ? {} : { field }) }); },
+  },
+  {
     service: 'sii', path: ['bte', 'comunas'], summary: 'Comuna catalog for BTE emission (local, no portal contact).',
     effect: 'read', auth: 'public', browser: 'none', profile: 'none', options: [{ name: 'region', kind: 'integer', description: 'Region number.' }],
     output: { description: '{ [region]: { [comuna]: label } }' }, errors: ['INVALID_INPUT'], contractRef: `${SII_DOCS}#boletas-de-honorarios-btebhe`,
     run: (input) => { const region = num(input, 'region'); return Promise.resolve(region === undefined ? BTE_COMUNAS : (BTE_COMUNAS[region] ?? {})); },
   },
   {
-    service: 'sii', path: ['bte', 'emit'], summary: 'Preview (default) or legally issue one boleta de honorarios; --confirm must equal the gross total.',
-    effect: 'write', auth: 'session', browser: 'headless', profile: 'optional',
+    service: 'sii', path: ['bte', 'emit'], summary: 'Issue a prepared snapshot with its fingerprint, or preview/issue a manually specified boleta.',
+    effect: 'destructive', auth: 'session', browser: 'headless', profile: 'optional',
     options: [
-      { name: 'receptor', kind: 'string', required: true, description: 'Receptor RUT.' }, { name: 'nombre', kind: 'string', required: true, description: 'Receptor name.' },
-      { name: 'domicilio', kind: 'string', required: true, description: 'Receptor address.' },
-      { name: 'region', kind: 'integer', required: true, description: 'Region number.', discoverWith: 'portales sii bte comunas' },
-      { name: 'comuna', kind: 'integer', required: true, description: 'Comuna code.', discoverWith: 'portales sii bte comunas --region <region>' },
-      { name: 'linea', kind: 'string', required: true, repeatable: true, description: '"<monto>:<glosa>" line (1 to 4).' },
-      { name: 'retiene', kind: 'enum', values: ['receptor', 'emisor'], description: 'Who retains (default receptor).' },
+      { name: 'snapshot', kind: 'string', description: 'Preparation returned by bte prepare; requires its exact fingerprint in --confirm.', discoverWith: 'portales sii bte prepare --from-folio <folio> --profile <profile>' },
+      { name: 'receptor', kind: 'string', description: 'Receptor RUT.' }, { name: 'nombre', kind: 'string', description: 'Receptor name.' },
+      { name: 'domicilio', kind: 'string', description: 'Receptor address.' },
+      { name: 'region', kind: 'integer', description: 'Region number.', discoverWith: 'portales sii bte options region' },
+      { name: 'comuna', kind: 'integer', description: 'Comuna code.', discoverWith: 'portales sii bte options comuna --region <region>' },
+      { name: 'linea', kind: 'string', repeatable: true, description: '"<monto>:<glosa>" line (1 to 4).' },
+      { name: 'retiene', kind: 'enum', values: ['receptor', 'emisor'], description: 'Who retains (default receptor).', discoverWith: 'portales sii bte options retiene' },
       { name: 'fecha', kind: 'date', description: 'Boleta date (default today, within ±3 months).' },
       { name: 'sin-detalle', kind: 'boolean', description: 'Hide line detail.' }, { name: 'enviar', kind: 'string', description: 'Email destination for the PDF (emit only).' },
       { name: 'sin-copia', kind: 'boolean', description: 'No copy to the emisor.' },
     ],
-    confirm: { description: 'Gross total of all lines; omit to preview.' },
-    output: { description: '{ emitida, ...preview or issued boleta, supportedScopes, principal }' }, errors: ['INVALID_INPUT', 'CONFIRMATION_REQUIRED', ...sessionErrors], contractRef: `${SII_DOCS}#boletas-de-honorarios-btebhe`,
+    confirm: { description: 'Snapshot fingerprint (required with --snapshot); legacy manual input uses gross total.' },
+    output: { description: '{ emitida, ...preview or verified issued boleta, supportedScopes }' }, errors: ['INVALID_INPUT', 'CONFIRMATION_REQUIRED', 'SNAPSHOT_EXPIRED', 'SNAPSHOT_STALE', 'AUTHORIZATION_DENIED', 'REMOTE_STATE_AMBIGUOUS', ...sessionErrors], contractRef: 'services/sii/docs/contracts/bte-previous.md', contractVersion: '2026-09-28',
     run: (input, context) => withScope(context, profileOf(input), 'boletas-de-honorarios-btebhe', async (runtime) => {
+      const snapshot = str(input, 'snapshot');
+      if (snapshot !== undefined) {
+        const conflicting = Object.keys(input.options).filter(key => !['snapshot', 'confirm', 'profile', 'json', 'human'].includes(key));
+        if (conflicting.length > 0) throw invalidInput('Snapshot emission cannot be combined with manual fields.', conflicting.map(field => ({ field: `--${field}`, expected: 'absent with --snapshot' })));
+        const confirm = str(input, 'confirm');
+        return bteEmitPrevious(runtime, { snapshot, ...(confirm === undefined ? {} : { confirm }) });
+      }
       const args = bteArgs(input);
       const meta = await principalScope(runtime, profileOf(input));
       if (input.options.confirm === undefined) return { emitida: false, ...await bteEmitPreview(runtime, args), ...meta };

@@ -103,6 +103,9 @@ export interface PortalSession {
   goto(url: string): Promise<string>;
   /** Evaluate a JS expression in the page; returns its JSON-serialisable result. */
   evaluate<T>(expression: string): Promise<T>;
+  /** Fill observed controls and click once, preserving the portal's client-side validation.
+   * Wait for the exact destination path; never retries a submission. */
+  submitForm(input: { fields: Record<string, string>; button: string; expectedPath: string }): Promise<void>;
   /** Issue an authenticated JSON request from the session's browser context (the
    *  session cookies are sent automatically). The primitive behind the SII SPA
    *  JSON facades (the `www4.sii.cl` SDI endpoints — RCV, representación, …).
