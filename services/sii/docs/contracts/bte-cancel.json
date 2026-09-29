@@ -4,7 +4,9 @@
   "operations": [
     "bte.cancel-options",
     "bte.cancel-prepare",
-    "bte.cancel"
+    "bte.cancel",
+    "bte.cancel-list",
+    "bte.cancel-download"
   ],
   "observedAt": "2026-09-28",
   "explanation": "bte-cancel.md",
@@ -43,6 +45,19 @@
         },
         {
           "css": "input[name=\"BtnSalir\"]",
+          "expectedVisibleCount": 1
+        }
+      ],
+      "kind": "result"
+    },
+    "monthly-report": {
+      "description": "Official printable monthly issued report; includes active and annulled documents.",
+      "routeFragments": [
+        "/cgi_IMT/TMBCOC_InformeMensualBhe.cgi"
+      ],
+      "controls": [
+        {
+          "css": "input[name=\"CmdImprimir\"]",
           "expectedVisibleCount": 1
         }
       ],
@@ -86,7 +101,8 @@
   ],
   "successConditions": [
     "Exact confirmed preview and one final submission.",
-    "Issued monthly row matches document identity and amounts with ANUL state and annulment date."
+    "Issued monthly row matches document identity and amounts with ANUL state and annulment date.",
+    "Cancellation report PDF identifies the issuer and recipient and ties the selected folio to ANUL and its annulment date in one row."
   ],
   "stopConditions": [
     "Changed source, preview, identity, warning, or document.",
@@ -95,7 +111,8 @@
     "Ambiguous write: reconcile without resubmission."
   ],
   "supportedBranches": [
-    "Principal-issued active boleta with domestic identified recipient and automatic SII recipient notification."
+    "Principal-issued active boleta with domestic identified recipient and automatic SII recipient notification.",
+    "List only annulled issued documents; print the unmodified official monthly page containing one selected annulled folio."
   ],
   "responseFingerprints": {
     "preview": [

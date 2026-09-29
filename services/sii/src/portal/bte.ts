@@ -290,3 +290,28 @@ export async function fetchBtePdf(session: PortalSession, codigo: string): Promi
   if (response.status !== 200 || response.contentType?.split(';')[0]?.trim() !== 'application/pdf' || new TextDecoder().decode(response.bytes.slice(0, 5)) !== '%PDF-') throw new PortalError('DOWNLOAD_INVALID', 'The boleta download is not a PDF.');
   return response.bytes;
 }
+
+/** Print the official monthly page containing the selected annulled row. This is a report, not a separate certificate. */
+export async function printBteCancellationReport(session: PortalSession, params: { rut: Rut; periodo: Periodo; boleta: BteBoleta }, pace: () => Promise<void>): Promise<Uint8Array> {
+  const seen = new Set<string>();
+  for (let pagina = 0; pagina < MAX_PAGINAS; pagina++) {
+    if (pagina > 0) await pace();
+    const { meta, rows } = await fetchPage(session, monthlyUrl('EMITIDAS', params.rut, params.periodo, pagina));
+    if (!meta || !rows) throw new PortalError('CONTRACT_MISMATCH', 'Expected an issued monthly report with document rows.');
+    const pageRows = rowsByIndex(rows).map(projectBoleta);
+    const found = pageRows.filter(row => row.folio === params.boleta.folio && row.codigo === params.boleta.codigo);
+    if (found.length === 1) {
+      if (JSON.stringify(found[0]) !== JSON.stringify(params.boleta) || found[0]?.estado !== 'ANUL' || !found[0].fechaAnulacion) throw new PortalError('CONTRACT_MISMATCH', 'The annulled document changed before printing.');
+      const printable = await session.evaluate<boolean>(`(() => {
+        const controls = [...document.querySelectorAll('input[name="CmdImprimir"]')].filter(e => e.getClientRects().length);
+        return location.pathname === '/cgi_IMT/TMBCOC_InformeMensualBhe.cgi' && controls.length === 1 && controls[0].getAttribute('onclick') === 'document:print();';
+      })()`);
+      if (!printable) throw new PortalError('CONTRACT_MISMATCH', 'Expected one official monthly-report print control.');
+      return session.printPdf();
+    }
+    const previous = seen.size;
+    for (const row of pageRows) seen.add(`${row.folio}|${row.codigo}`);
+    if (seen.size === previous || seen.size >= (asMonto(meta['total_boletas']) ?? 0)) break;
+  }
+  throw new PortalError('CONTRACT_MISMATCH', 'The selected annulled document is absent from the report pages.');
+}

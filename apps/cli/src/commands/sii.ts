@@ -16,7 +16,7 @@ import type { Runtime } from '../../../../services/sii/src/seams/index.js';
 import { authStatus, logout } from '../../../../services/sii/src/tasks/auth.js';
 import { rcvList, rcvListAll, rcvSummary } from '../../../../services/sii/src/tasks/rcv.js';
 import { btePreparePrevious, bteEmitPrevious } from '../../../../services/sii/src/tasks/bte-previous.js';
-import { bteCancellationOptions, btePrepareCancellation, bteCancel } from '../../../../services/sii/src/tasks/bte-cancel.js';
+import { bteCancellationOptions, bteCancellationList, btePrepareCancellation, bteCancel } from '../../../../services/sii/src/tasks/bte-cancel.js';
 import { bteDownload } from '../../../../services/sii/src/tasks/bte-download.js';
 import { BTE_COMUNAS, bteOptions, bteEmit, bteEmitPreview, bteList, type BteEmitArgs } from '../../../../services/sii/src/tasks/bte.js';
 import {
@@ -322,6 +322,13 @@ const commands: Spec[] = [
     }),
   },
   {
+    service: 'sii', path: ['bte', 'cancel-list'], summary: 'List annulled principal-issued boletas and their annulment dates for one month.',
+    effect: 'read', auth: 'session', browser: 'headless', profile: 'optional', positionals: [periodoPositional],
+    output: { description: '{ principal, periodo, totalBoletas, boletas, supportedScopes }' }, errors: ['INVALID_INPUT', 'AUTHORIZATION_DENIED', ...sessionErrors],
+    contractRef: 'services/sii/docs/contracts/bte-cancel.md', contractVersion: '2026-09-28',
+    run: (input, context) => withScope(context, profileOf(input), 'boletas-de-honorarios-btebhe', runtime => bteCancellationList(runtime, { periodo: input.positionals.periodo as string })),
+  },
+  {
     service: 'sii', path: ['bte', 'cancel-options'], summary: 'Discover live cancellation causes for issued honorarios.',
     effect: 'read', auth: 'session', browser: 'headless', profile: 'optional',
     output: { description: '{ field, options: [{ id, label }] }' }, errors: ['AUTHORIZATION_DENIED', ...sessionErrors],
@@ -361,6 +368,21 @@ const commands: Spec[] = [
       const output = str(input, 'output'); const destination = str(input, 'destination');
       context.stage('download');
       const result = await bteDownload(runtime, { profile: profileOf(input), periodo: input.positionals.periodo as string, folio: num(input, 'folio') ?? 0, ...(output === undefined ? {} : { output }), ...(destination === undefined ? {} : { destination }) });
+      context.stage('verify');
+      const artifact = await context.recordArtifact({ profile: profileOf(input), identifiers: result.identifiers, documentType: result.documentType, extractedAt: new Date().toISOString(), coveredPeriod: result.coveredPeriod, byteCount: result.byteCount, mediaType: result.mediaType, sha256: result.sha256, validationChecks: result.validationChecks, path: result.path });
+      return { ...artifact, boleta: result.boleta, destination: result.destination };
+    }),
+  },
+  {
+    service: 'sii', path: ['bte', 'cancel-download'], summary: 'Print the official monthly report showing an annulled folio and date; not a separate SII certificate.',
+    effect: 'read', auth: 'session', browser: 'headless', profile: 'optional', positionals: [periodoPositional],
+    options: [{ name: 'folio', kind: 'integer', required: true, description: 'Annulled folio.', discoverWith: 'portales sii bte cancel-list <periodo> --profile <profile>' }, ...outputOptions],
+    output: { description: 'Verified artifact descriptor + boleta' }, errors: ['INVALID_INPUT', 'LOCAL_DEPENDENCY_MISSING', 'DOWNLOAD_INVALID', ...sessionErrors],
+    contractRef: 'services/sii/docs/contracts/bte-cancel.md', contractVersion: '2026-09-28',
+    run: (input, context) => withScope(context, profileOf(input), 'boletas-de-honorarios-btebhe', async runtime => {
+      const output = str(input, 'output'); const destination = str(input, 'destination');
+      context.stage('download');
+      const result = await bteDownload(runtime, { cancellationReport: true, profile: profileOf(input), periodo: input.positionals.periodo as string, folio: num(input, 'folio') ?? 0, ...(output === undefined ? {} : { output }), ...(destination === undefined ? {} : { destination }) });
       context.stage('verify');
       const artifact = await context.recordArtifact({ profile: profileOf(input), identifiers: result.identifiers, documentType: result.documentType, extractedAt: new Date().toISOString(), coveredPeriod: result.coveredPeriod, byteCount: result.byteCount, mediaType: result.mediaType, sha256: result.sha256, validationChecks: result.validationChecks, path: result.path });
       return { ...artifact, boleta: result.boleta, destination: result.destination };

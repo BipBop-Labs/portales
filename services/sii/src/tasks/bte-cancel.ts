@@ -80,3 +80,14 @@ export async function bteCancel(runtime: Runtime, args: { snapshot: string; conf
     }
   });
 }
+
+/** List only annulled principal-issued documents, without mixing in the report's active-only totals. */
+export async function bteCancellationList(runtime: Runtime, args: { periodo: string }) {
+  const periodo = Periodo.parse(args.periodo);
+  await requireSelf(runtime);
+  return withSession(runtime, async (session, ctx) => {
+    const month = await fetchBteMensual(session, { rut: Rut.parse(ctx.sessionRut), periodo, side: 'EMITIDAS' }, () => runtime.clock.sleep(1000));
+    const boletas = month.boletas.filter(row => row.estado === 'ANUL');
+    return { principal: month.rut, periodo: month.periodo, totalBoletas: boletas.length, boletas, supportedScopes: ['principal'] };
+  });
+}

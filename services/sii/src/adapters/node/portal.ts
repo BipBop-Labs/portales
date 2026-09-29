@@ -98,6 +98,10 @@ class PlaywrightPortalSession implements PortalSession {
     return (await this.page.evaluate(expression)) as T;
   }
 
+  async printPdf(): Promise<Uint8Array> {
+    return this.page.pdf({ format: 'A4', landscape: true, printBackground: true });
+  }
+
   async submitForm(input: { fields: Record<string, string>; button: string; expectedPath: string; confirmDialog?: string }): Promise<void> {
     for (const [name, value] of Object.entries(input.fields)) {
       const controls = this.page.locator(`[name=${JSON.stringify(name)}]`);

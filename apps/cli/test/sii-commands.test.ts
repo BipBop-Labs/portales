@@ -242,6 +242,44 @@ describe('SII registry commands', () => {
     expect(submissions).toBe(2);
   });
 
+  it('lists only annulled boletas and publishes a report only when the selected PDF row proves annulment', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'portales-synthetic-cancellation-'));
+    const store = memoryStore({ session: SESSION, operate: SELF });
+    let printed = 0;
+    let pdfRow = '7 ANUL 17/09/2026';
+    const row = (folio: number, state: string) => Object.fromEntries(Object.entries({ nroboleta: String(folio), codigobarras: `SYNTHETIC${String(folio)}`, fechaemision: '17/09/2026', rutreceptor: '76000001', dvreceptor: '9', nombrereceptor: 'SYNTHETIC RECIPIENT', totalhonorarios: '1000', honorariosliquidos: '850', retencion_emisor: '0', retencion_receptor: '150', estado: state, fechaanulacion: state === 'S' ? '17/09/2026' : '' }).map(([key, value]) => [`${key}_${String(folio)}`, value]));
+    const session = {
+      goto: (url: string) => Promise.resolve(url),
+      evaluate: (expression: string) => {
+        if (expression.includes('CmdImprimir')) return Promise.resolve(true);
+        if (expression.includes('arr_informe_mensual')) return Promise.resolve({ ...row(7, 'S'), ...row(8, 'N') });
+        if (expression.includes('xml_values')) return Promise.resolve({ total_boletas: '2' });
+        throw new Error('Unexpected synthetic browser read.');
+      },
+      printPdf: () => { printed++; return Promise.resolve(minimalPdf(`INFORME MENSUAL DE BOLETAS EMITIDAS 20000042-0 76000001-9 ${pdfRow}`)); },
+      close: () => Promise.resolve(),
+    } as unknown as PortalSession;
+    const runtime = { ...fakeRuntime(store, { restore: () => Promise.resolve(session) }), files: { write: async (dir: string, name: string, bytes: Uint8Array) => { const path = join(dir, name); await writeFile(path, bytes, { mode: 0o600 }); return path; } } };
+    try {
+      const list = harness(runtime);
+      expect(await runCli(['sii', 'bte', 'cancel-list', '2026-09'], list.deps)).toBe(0);
+      expect(list.result()).toMatchObject({ totalBoletas: 1, boletas: [{ folio: 7, estado: 'ANUL', fechaAnulacion: '17/09/2026' }] });
+      expect(list.result().totales).toBeUndefined();
+      const active = harness(runtime);
+      expect(await runCli(['sii', 'bte', 'cancel-download', '2026-09', '--folio', '8', '--output', directory], active.deps)).toBe(2);
+      expect(printed).toBe(0);
+      const download = harness(runtime);
+      expect(await runCli(['sii', 'bte', 'cancel-download', '2026-09', '--folio', '7', '--output', directory], download.deps)).toBe(0);
+      expect(download.result()).toMatchObject({ documentType: 'bhe-cancellation-report-pdf', boleta: { folio: 7, estado: 'ANUL' } });
+      expect(download.result().validationChecks).toContain('folio-annulled-date-in-same-row');
+      pdfRow = '7 VIG 17/09/2026 8 ANUL 17/09/2026';
+      const wrongRow = harness(runtime);
+      expect(await runCli(['sii', 'bte', 'cancel-download', '2026-09', '--folio', '7', '--output', directory], wrongRow.deps)).not.toBe(0);
+      expect(wrongRow.error()).toMatchObject({ code: 'DOWNLOAD_INVALID' });
+      expect(wrongRow.out).toEqual([]);
+    } finally { await rm(directory, { recursive: true, force: true }); }
+  });
+
   it('lists and downloads received documents through the observed MIPYME route with text validation', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'portales-sii-received-'));
     await chmod(directory, 0o700);

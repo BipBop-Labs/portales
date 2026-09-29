@@ -27,3 +27,13 @@ Read `runs show <run-id>` and `doctor sii --profile <profile>` on failure. Authe
 Do not put boletas, identifiers, account data, hidden fields or confirmation results into repository fixtures. Synthetic public-path tests protect preview-only behavior, exact confirmation, account scope, stale previews, expiry, and single execution after an uncertain result.
 
 Live verification on 2026-09-28: `bte.cancel-options` matched the three browser choices; `bte.cancel-prepare` matched the browser document preview without submitting; one user-authorized `bte.cancel` accepted the exact warning once and verified the same monthly document with `ANUL` state and annulment date. No account data or document contents are retained here.
+
+## Listing and printable evidence (2026-09-28)
+
+`bte.cancel-list` filters the principal's issued monthly rows to `ANUL`, keeping the annulment date and returning a filtered count. It omits report totals because SII's aggregates exclude annulled amounts. Empty months return an empty list. No new portal endpoint is used.
+
+The official monthly report exposes `input[name="CmdImprimir"]`, labelled “Imprimir”, with `onclick="document:print();"`. Its annulled row has an `ANUL` tooltip naming the date. Opening the cancellation preview for an already-annulled folio displays an already-annulled message with no certificate/download button. The original PDF link still returns the original document without annulment status; it is not evidence of annulment.
+
+`bte.cancel-download` prints the unmodified official monthly page containing the requested annulled folio to landscape A4 PDF, through Chromium's print-to-PDF facility. It is an official report printout, not a separately issued annulment certificate. Other boletas on that page remain visible, including active ones. The task compares the live selected row before printing and validates PDF signature, both parties, report title, and the selected folio followed by `ANUL` and its annulment date in the same extracted row. The private artifact is indexed as `bhe-cancellation-report-pdf`. An active folio is rejected before printing. A signature or identity/state mismatch never publishes a file.
+
+Live CLI verification on 2026-09-28: `bte.cancel-list` excluded the active document and matched the annulled browser row; `bte.cancel-download` produced a readable PDF with that folio, state and date; `artifacts verify` confirmed checksum, size and private permissions. Browser observation also confirmed that the original PDF has no annulment marker. The report contains private account data and must stay outside the repository.
