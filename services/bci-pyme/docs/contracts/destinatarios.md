@@ -193,3 +193,18 @@ recipients tab`. No `verifying-created-recipient` stage was emitted, and the lis
 showed no new recipient. Six repeated read-only runs of the same pre-submit steps did
 not reproduce it, and the next fresh preview plus `create` succeeded. If it recurs,
 capture the destinatarios frame's visible tabs and headings before changing selectors.
+
+## Chile catalog/detail label pair (2026-10-13)
+
+The supplied live discovery and saved-detail observations show catalog label
+`Banco De Chile / edwards` and detail label `Banco De Chile-edwards`. The shared
+recipient matcher accepts only this explicit detail/catalog pair in addition to the
+recorded Santander pair and exact equality. It does not normalize arbitrary bank
+punctuation, case, or reversed pairs. This boundary is used by authorization preview
+and creation post-verification; a mismatch can otherwise report a missing recipient
+or an ambiguous write. Reconcile an ambiguous creation rather than resubmitting it.
+
+The regression is an isolated label comparison with independently authored synthetic
+negative labels, no recipient identities or account data. This repair was verified
+locally only; live authorization verification remains pending with the operator.
+No selectors, page-state fingerprints, or navigation changed.

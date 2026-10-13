@@ -66,5 +66,5 @@
     "five minutes without a recognized BciPass outcome",
     "an unobserved BciPass deletion challenge"
   ],
-  "supportedBranches": ["single-page status lists", "Banco Santander / santiago label pair", "creation without automatic approval"]
+  "supportedBranches": ["single-page status lists", "Banco Santander / santiago label pair", "Banco De Chile / edwards label pair", "creation without automatic approval"]
 }
