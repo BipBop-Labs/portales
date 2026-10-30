@@ -46,6 +46,23 @@ async function onAuthenticatedPortal(page: Page): Promise<boolean> {
   return await page.locator("input[type='password']").filter({ visible: true }).count() === 0;
 }
 
+/** Waits up to 15 s for either the login host or a stable authenticated portal. */
+async function stillAuthenticated(page: Page): Promise<boolean> {
+  const deadline = Date.now() + 15_000;
+  let stableSince: number | undefined;
+  while (Date.now() < deadline) {
+    if (new URL(page.url()).host === loginHost) return false;
+    if (await onAuthenticatedPortal(page)) {
+      stableSince ??= Date.now();
+      if (Date.now() - stableSince >= 3_000) return true;
+    } else {
+      stableSince = undefined;
+    }
+    await page.waitForTimeout(500);
+  }
+  return false;
+}
+
 /** Owns the complete observed login interaction; callers cannot retry it. */
 export class PlaywrightLoginPortal implements OneShotLoginPortal<Credentials> {
   constructor(private readonly profile: string) {}
@@ -61,6 +78,12 @@ export class PlaywrightLoginPortal implements OneShotLoginPortal<Credentials> {
       const page = context.pages()[0] ?? await context.newPage();
       page.on('framenavigated', (frame) => { if (frame === page.mainFrame()) trail.push(route(frame.url())); });
       await page.goto(portalUrl, { waitUntil: 'domcontentloaded' });
+      // A still-valid saved session skips the login page: confirm it without submitting credentials.
+      if (await stillAuthenticated(page)) {
+        authenticationAccepted = true;
+        accepted();
+        return;
+      }
       if (new URL(page.url()).host !== loginHost) {
         throw new PortalError('CONTRACT_MISMATCH', `Expected the login page at ${loginHost}; observed ${trail.join(' → ')}.`, { recovery: { stage: 'navigate', loginAttempted: false } });
       }

@@ -5,8 +5,8 @@
 - Account scope: the personal accounts available to one Banco de Chile personas login
 - Credential store: operating-system Secret Service
 - Authentication: explicit, one attempt, no automatic retry
-- Supported effects: authentication and recipient listing. Planned, in order: own accounts,
-  account movements, cartola, credit-card statement, transfers, credit-card payment. Transfers
+- Supported effects: authentication, recipient listing, own accounts and account movements.
+  Planned, in order: recipient edits (alias, favourite, delete account), cartola, credit-card statement, transfers, credit-card payment. Transfers
   and card payments will be `destructive` operations with prepare, explicit confirmation, one
   execution and live verification. Business banking
   (`portalempresas`) is out of scope.
@@ -70,6 +70,19 @@ with all their accounts, across every bank. `show` finds one recipient by name w
 and accent-insensitive), RUT in any format, or ID; several name matches return the candidates
 with their IDs instead of guessing. The output is private: redirect it only to a private file outside the
 repository.
+
+## Own accounts and movements
+
+```text
+portales bancochile-personas cuentas list --profile default
+portales bancochile-personas movimientos list --profile default --account <number>
+portales bancochile-personas movimientos list --profile default --account <number> --from 2026-10-01 --to 2026-10-31
+```
+
+`cuentas list` returns each own account with its available balance. `movimientos list` without
+dates returns the portal's default view (about 45 days, including movements already made that post
+on a later business day); with dates it filters by accounting date, both days included, at most 45
+days per call ([contract](contracts/cuentas-movimientos.md)).
 
 ## Data handling
 
