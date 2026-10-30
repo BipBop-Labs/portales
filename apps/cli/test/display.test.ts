@@ -30,7 +30,7 @@ describe('BCI virtual display regression', () => {
     expect(spawn).toHaveBeenCalledWith(
       'xvfb-run',
       ['-a', '/synthetic/node', '/synthetic/main.js', 'bci-pyme', 'businesses', 'list', '--profile', 'default'],
-      { stdio: 'inherit', env: { DISPLAY: ':1', PORTALES_XVFB_ACTIVE: '1' }, detached: true },
+      { stdio: ['inherit', 'inherit', 'inherit', 2], env: { DISPLAY: ':1', PORTALES_XVFB_ACTIVE: '1', PORTALES_STDERR_FD: '3' }, detached: true },
     );
     expect(runWithVirtualDisplayIfNeeded(['sii', 'auth', 'status'], {
       env: {}, platform: 'linux', spawn,
