@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { requireSafeProfile } from '../auth/login-breaker.js';
 import { PortalError } from '../errors.js';
-import { isValidRut } from '../rut.js';
+import { isValidRut, sameRut } from '../rut.js';
 import { requireExactDiscoveredOption } from '../portal/selection.js';
 import { recipientBankMatches } from '../portal/recipient-bank.js';
 import type { BciPymePortal, Recipient, RecipientProgress } from '../portal/types.js';
@@ -25,8 +25,7 @@ type Action = 'create' | 'authorize' | 'delete';
 type Selection = z.infer<typeof authorizeSchema>;
 
 function matchingRecipient(recipients: Recipient[], target: Selection, bank: string) {
-  const rut = (value: string) => value.replace(/[.-]/gu, '').toUpperCase();
-  const matches = recipients.filter(recipient => rut(recipient.rut) === rut(target.rut)
+  const matches = recipients.filter(recipient => sameRut(recipient.rut, target.rut)
     && recipientBankMatches(recipient.bank, bank)
     && recipient.accountNumber.replace(/^0+/u, '') === target.accountNumber.replace(/^0+/u, ''));
   if (matches.length > 1) throw new PortalError('REMOTE_STATE_AMBIGUOUS', 'Multiple recipients match. Inspect destinatarios list; no write was submitted.');

@@ -10,7 +10,7 @@ function probes(overrides: Partial<DoctorProbes> = {}): DoctorProbes {
     onPath: vi.fn().mockResolvedValue(true),
     chromiumExecutable: vi.fn().mockResolvedValue('/synthetic/chromium'),
     secretService: vi.fn().mockResolvedValue('reachable'),
-    bciSession: vi.fn().mockResolvedValue({ present: true, earliestExpiry: '2026-12-01T00:00:00Z' }),
+    browserSession: vi.fn().mockResolvedValue({ present: true, earliestExpiry: '2026-12-01T00:00:00Z' }),
     siiSession: vi.fn().mockResolvedValue({ present: true, www2ExpiresAt: null }),
     breaker: vi.fn().mockResolvedValue(false),
     ...overrides,

@@ -2,6 +2,7 @@ import type { Registry } from '../../../packages/runtime/src/registry.js';
 import type { CliDependencies } from './dependencies.js';
 import { bciPymeService } from './commands/bci-pyme.js';
 import { bci_pyme_observeCommands } from './commands/bci-pyme-observe.js';
+import { bancoChilePersonasService } from './commands/bancochile-personas.js';
 import { sagService } from './commands/sag.js';
 import { siiService } from './commands/sii.js';
 import { globalCommands } from './commands/global.js';
@@ -13,6 +14,7 @@ export function buildRegistry(): Registry<CliDependencies> {
   const registry: Registry<CliDependencies> = {
     services: [
       { ...bciPymeService, commands: [...bciPymeService.commands, ...bci_pyme_observeCommands] },
+      bancoChilePersonasService,
       sagService,
       siiService,
     ],

@@ -1,7 +1,7 @@
 import { isValidRut } from '../rut.js';
-import { SecretServiceError, type SecretReader } from '../../../../packages/runtime/src/secret-service.js';
+import type { SecretReader } from '../../../../packages/runtime/src/secret-service.js';
+import { loginOnce } from '../../../../packages/runtime/src/one-shot-login.js';
 import { PortalError } from '../errors.js';
-import { requireSafeProfile } from '../auth/login-breaker.js';
 
 export interface BciCredentials { rut: string; password: string }
 export interface LoginPortal {
@@ -34,39 +34,15 @@ export function parseCredentials(value: string): BciCredentials {
 }
 
 /** Makes one explicit BCI login attempt and returns only non-secret session status. */
-export async function loginBciPyme(
+export function loginBciPyme(
   input: { profile: string },
   dependencies: LoginDependencies,
 ) {
-  requireSafeProfile(input.profile);
-  await dependencies.breaker.assertClear(input.profile);
-  let encoded: string;
-  try {
-    encoded = await dependencies.secrets.read({
-      service: 'cl.bipbop.portales.bci', account: input.profile,
-    });
-  } catch (error: unknown) {
-    if (error instanceof SecretServiceError) throw new PortalError(error.code, 'Credentials could not be read from Secret Service.');
-    throw error;
-  }
-  const credentials = parseCredentials(encoded);
-  const attempt = { submitted: false, accepted: false };
-  try {
-    await dependencies.portal.authenticate(
-      credentials,
-      () => { attempt.submitted = true; },
-      () => { attempt.accepted = true; },
-    );
-  } catch (error: unknown) {
-    if (attempt.submitted && !attempt.accepted) await dependencies.breaker.trip(input.profile);
-    throw error;
-  }
-  if (!attempt.accepted) {
-    if (attempt.submitted) await dependencies.breaker.trip(input.profile);
-    throw new PortalError('REMOTE_STATE_AMBIGUOUS', 'The login result was not accepted by the portal.');
-  }
-  await dependencies.authState?.recordAuthenticated(input.profile, 'authenticated-shell');
-  return { profile: input.profile, authenticated: true as const, lastAuthenticatedStage: 'authenticated-shell' as const };
+  return loginOnce({
+    profile: input.profile, keyringService: 'cl.bipbop.portales.bci', stage: 'authenticated-shell' as const,
+    parse: parseCredentials, secrets: dependencies.secrets, breaker: dependencies.breaker,
+    portal: dependencies.portal, ...(dependencies.authState === undefined ? {} : { authState: dependencies.authState }),
+  });
 }
 
 export const authLoginMetadata = {

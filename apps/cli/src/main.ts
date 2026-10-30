@@ -10,7 +10,10 @@ import { setupBciPyme } from '../../../services/bci-pyme/src/tasks/auth-setup.js
 import { loginBciPyme } from '../../../services/bci-pyme/src/tasks/auth-login.js';
 import { loginSiiWithPortalesProfile } from './sii-auth.js';
 import { setupSii } from '../../../services/sii/src/tasks/auth-setup.js';
-import { runWithVirtualDisplayIfNeeded } from './display.js';
+import { runWithVirtualDisplayIfNeeded, stderrWriter } from './display.js';
+import { login as loginBancoChilePersonas } from '../../../services/bancochile-personas/src/tasks/auth.js';
+import { PlaywrightLoginPortal as BancoChileLoginPortal } from '../../../services/bancochile-personas/src/portal/login.js';
+import { PlaywrightPortal as BancoChilePortal } from '../../../services/bancochile-personas/src/portal/portal.js';
 import { buildRegistry } from './registry.js';
 
 const args = process.argv.slice(2);
@@ -33,8 +36,12 @@ if (virtualDisplay !== null) {
       authState: new AuthState(stateRoot()),
       portal: new PlaywrightBciLoginPortal(input.profile),
     }),
+    loginBancoChilePersonas: (input) => loginBancoChilePersonas(input, {
+      secrets: new SecretToolReader(), portal: new BancoChileLoginPortal(input.profile), stateRoot: stateRoot(),
+    }),
+    openBancoChilePortal: (profile) => BancoChilePortal.open(profile),
     stdout: (value) => process.stdout.write(value),
-    stderr: (value) => process.stderr.write(value),
+    stderr: stderrWriter(),
     ...(version === undefined ? {} : { packageVersion: version.packageVersion, ...(version.commit === null ? {} : { commit: version.commit }) }),
   });
 }
