@@ -10,7 +10,7 @@ export interface CliDependencies {
   observeBciLogin?: () => Promise<PublicLoginObservation>;
   login(input: { profile: string }): Promise<unknown>;
   loginBancoChilePersonas?: (input: { profile: string }) => Promise<unknown>;
-  openBancoChilePortal?: (profile: string) => Promise<import('../../../services/bancochile-personas/src/tasks/destinatarios.js').RecipientsPortal & { close(): Promise<void> }>;
+  openBancoChilePortal?: (profile: string) => Promise<import('../../../services/bancochile-personas/src/tasks/destinatarios.js').RecipientsPortal & import('../../../services/bancochile-personas/src/tasks/cuentas.js').AccountsPortal & { close(): Promise<void> }>;
   loginSii?: (input: { profile: string }) => Promise<unknown>;
   /** @deprecated No longer used; SII commands are registry-parsed. Kept so older test literals still type-check. */
   runSii?: (args: string[]) => Promise<number>;

@@ -3,12 +3,14 @@ import type { CommandSpec, ServiceSpec } from '../../../../packages/runtime/src/
 import { stateRoot as defaultStateRoot, dataRoot as defaultDataRoot } from '../../../../packages/runtime/src/paths.js';
 import type { CliDependencies } from '../dependencies.js';
 import { breakerStatus, logout, status } from '../../../../services/bancochile-personas/src/tasks/auth.js';
+import { listCuentas, listMovimientos, movementRange, type AccountsPortal } from '../../../../services/bancochile-personas/src/tasks/cuentas.js';
 import { listDestinatarios, showDestinatario, type RecipientQuery, type RecipientsPortal } from '../../../../services/bancochile-personas/src/tasks/destinatarios.js';
 
 type Spec = CommandSpec<CliDependencies>;
 
 const SERVICE_DOC = 'services/bancochile-personas/docs/service.md';
 const LOGIN_CONTRACT = 'services/bancochile-personas/docs/contracts/auth-login.md';
+const ACCOUNTS_CONTRACT = 'services/bancochile-personas/docs/contracts/cuentas-movimientos.md';
 const RECIPIENTS_CONTRACT = 'services/bancochile-personas/docs/contracts/destinatarios.md';
 const OBSERVED = '2026-10-30';
 const sessionErrors = ['NOT_AUTHENTICATED', 'SESSION_EXPIRED', 'PROVIDER_ERROR', 'READINESS_TIMEOUT', 'CONTRACT_MISMATCH', 'BROWSER_LAUNCH_FAILED', 'RUN_LOCKED'] as const;
@@ -20,7 +22,7 @@ function roots(context: Parameters<Spec['run']>[1]) {
   };
 }
 
-async function withPortal<T>(context: Parameters<Spec['run']>[1], profile: string, work: (portal: RecipientsPortal) => Promise<T>): Promise<T> {
+async function withPortal<T>(context: Parameters<Spec['run']>[1], profile: string, work: (portal: RecipientsPortal & AccountsPortal) => Promise<T>): Promise<T> {
   if (context.deps.openBancoChilePortal === undefined) throw new PortalError('UNSUPPORTED_CAPABILITY', 'The Banco de Chile portal is not wired in this build.');
   context.stage('session-check');
   const portal = await context.deps.openBancoChilePortal(profile);
@@ -97,9 +99,37 @@ const commands: Spec[] = [
       return withPortal(context, input.profile as string, (portal) => showDestinatario({ profile: input.profile as string, query }, portal));
     },
   },
+  {
+    service: 'bancochile-personas', path: ['cuentas', 'list'], summary: 'List your own accounts (current accounts, credit lines) with their available balance.',
+    effect: 'read', auth: 'session', browser: 'headed', profile: 'required',
+    output: { description: '{ accounts: [{ number, type, productCode, label, currency, status, available }] } (private values)' },
+    errors: [...sessionErrors], contractRef: ACCOUNTS_CONTRACT, contractVersion: OBSERVED,
+    run: (input, context) => withPortal(context, input.profile as string, (portal) => listCuentas({ profile: input.profile as string }, portal)),
+  },
+  {
+    service: 'bancochile-personas', path: ['movimientos', 'list'], summary: 'List the movements of one own account in a date range (at most 45 days, both days included).',
+    description: 'Without dates, the portal\'s own default view (about the last 45 days, including movements already made that post on a later business day). With dates, accounting dates, both included, at most 45 days apart; split longer periods into several calls.',
+    effect: 'read', auth: 'session', browser: 'headed', profile: 'required',
+    options: [
+      { name: 'account', kind: 'string', required: true, description: 'Own account number.', discoverWith: 'portales bancochile-personas cuentas list --profile <profile>' },
+      { name: 'from', kind: 'string', description: 'First day, YYYY-MM-DD.' },
+      { name: 'to', kind: 'string', description: 'Last day, YYYY-MM-DD (default today).' },
+    ],
+    output: { description: '{ account, range: { from, to } | "portal-default", currency, total, debits, credits, movements: [{ id, date, direction, amount, balance, description, channel, details, documentNumber }] } (private values)' },
+    errors: ['INVALID_INPUT', 'UNSUPPORTED_CAPABILITY', ...sessionErrors], contractRef: ACCOUNTS_CONTRACT, contractVersion: OBSERVED,
+    discoverWith: ['portales bancochile-personas cuentas list --profile <profile>'],
+    run: (input, context) => {
+      const dates = {
+        ...(typeof input.options.from === 'string' ? { from: input.options.from } : {}),
+        ...(typeof input.options.to === 'string' ? { to: input.options.to } : {}),
+      };
+      movementRange(dates); // fail on bad dates before opening a browser
+      return withPortal(context, input.profile as string, (portal) => listMovimientos({ profile: input.profile as string, account: input.options.account as string, ...dates }, portal));
+    },
+  },
 ];
 
 export const bancoChilePersonasService: ServiceSpec<CliDependencies> = {
-  slug: 'bancochile-personas', title: 'Banco de Chile Personas', description: 'Banco de Chile personal banking: authentication and transfer recipients (accounts and movements follow).',
+  slug: 'bancochile-personas', title: 'Banco de Chile Personas', description: 'Banco de Chile personal banking: authentication, transfer recipients, own accounts and movements.',
   docs: SERVICE_DOC, commands,
 };

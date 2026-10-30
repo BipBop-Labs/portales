@@ -25,6 +25,10 @@
 6. The saved `bancochile.cl` cookies and origin storage restore an authenticated session in a
    fresh browser profile for later commands.
 
+7. When the saved session is still valid, step 1 stays on `portalpersonas.bancochile.cl`.
+   `auth login` then confirms the authenticated portal, refreshes the saved session and
+   returns without submitting credentials (observed 2026-10-30).
+
 ## Stop conditions
 
 - Any page other than the login host after the initial navigation (`CONTRACT_MISMATCH`, nothing submitted)
