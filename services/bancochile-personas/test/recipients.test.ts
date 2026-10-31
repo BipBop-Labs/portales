@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { recipientsFromPages } from '../src/portal/recipients.js';
 import { matchesName } from '../src/tasks/destinatarios.js';
+import { decodeEntities } from '../src/tasks/destinatarios-write.js';
 
 // Synthetic values only. Shape observed 2026-10-30: pages are cut by accounts, `paginas` is the
 // current page number and `totalItems` counts accounts, not recipients.
@@ -39,5 +40,12 @@ describe('matchesName', () => {
     expect(matchesName('MARÍA JOSÉ PÉREZ FICTICIA', 'maria perez')).toBe(true);
     expect(matchesName('MARÍA JOSÉ PÉREZ FICTICIA', 'maria soto')).toBe(false);
     expect(matchesName('MARÍA JOSÉ PÉREZ FICTICIA', '  ')).toBe(false);
+  });
+});
+
+describe('decodeEntities', () => {
+  it('reads accents the portal stored as HTML entities', () => {
+    expect(decodeEntities('Persona Ping&uuml;ino Ficticia')).toBe('Persona Pingüino Ficticia');
+    expect(decodeEntities('&Ntilde;and&uacute; &#233; &unknown;')).toBe('Ñandú é &unknown;');
   });
 });

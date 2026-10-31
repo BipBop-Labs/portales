@@ -6,7 +6,8 @@
 - Credential store: operating-system Secret Service
 - Authentication: explicit, one attempt, no automatic retry
 - Supported effects: authentication, recipient listing, own accounts and account movements.
-  Planned, in order: recipient edits (alias, favourite, delete account), cartola, credit-card statement, transfers, credit-card payment. Transfers
+  Recipient changes: favourite and name/alias edit with Mi Pass (`write`), deleting one account
+  (`destructive`). Planned, in order: cartola, credit-card statement, transfers, credit-card payment. Transfers
   and card payments will be `destructive` operations with prepare, explicit confirmation, one
   execution and live verification. Business banking
   (`portalempresas`) is out of scope.
@@ -70,6 +71,25 @@ with all their accounts, across every bank. `show` finds one recipient by name w
 and accent-insensitive), RUT in any format, or ID; several name matches return the candidates
 with their IDs instead of guessing. The output is private: redirect it only to a private file outside the
 repository.
+
+## Recipient changes
+
+```text
+portales bancochile-personas destinatarios prepare --profile default --action favorite --recipient-id <id> --account-id <id> --favorite true
+portales bancochile-personas destinatarios favorite --profile default --recipient-id <id> --account-id <id> --favorite true --confirm <confirmation>
+portales bancochile-personas destinatarios prepare --profile default --action delete-account --recipient-id <id> --account-id <id>
+portales bancochile-personas destinatarios delete-account --profile default --recipient-id <id> --account-id <id> --confirm <confirmation>
+```
+
+```text
+portales bancochile-personas destinatarios prepare --profile default --action edit --recipient-id <id> --name <name> --alias <account-id>=<alias>
+portales bancochile-personas destinatarios edit --profile default --recipient-id <id> --name <name> --alias <account-id>=<alias> --confirm <confirmation>
+```
+
+Favourite and delete apply immediately in the portal, without Mi Pass. An edit asks for Mi Pass:
+STDERR reports `awaiting-mipass`, approve it in the Mi Pass app (open the app; a notification may
+not arrive) within five minutes, and do not stop the command meanwhile. Prepare changes nothing; execution
+acts once and verifies by re-reading the agenda ([contract](contracts/destinatarios-escritura.md)).
 
 ## Own accounts and movements
 
