@@ -7,7 +7,8 @@
 - Authentication: explicit, one attempt, no automatic retry
 - Supported effects: authentication, recipient listing, own accounts and account movements.
   Recipient changes: favourite and name/alias edit with Mi Pass (`write`), deleting one account
-  (`destructive`). Planned, in order: cartola, credit-card statement, transfers, credit-card payment. Transfers
+  (`destructive`). Transfers: flow observed and one completed live
+  ([contract](contracts/transferencias.md)), command pending. Planned, in order: cartola, credit-card statement, transfers, credit-card payment. Transfers
   and card payments will be `destructive` operations with prepare, explicit confirmation, one
   execution and live verification. Business banking
   (`portalempresas`) is out of scope.
