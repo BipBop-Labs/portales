@@ -3,8 +3,9 @@
 - Observation date: 2026-10-30 (browser flow and the app's own JavaScript, read as text)
 - Live validation: deleting one recipient account completed (DELETE answered 200; the agenda
   then showed the recipient's other accounts only), through a diagnostic run of the same steps
-  whose two fixes are in the adapter. The favourite toggle and the Mi Pass edit are pending their
-  first complete live run.
+  whose two fixes are in the adapter. A Mi Pass edit (name and two aliases) completed live on
+  2026-10-31 the same way. The favourite toggle and a run of both through the public commands
+  are pending.
 - Effects: `favorite` and `edit` are `write`; `delete-account` is `destructive`
 
 ## Where each change happens
@@ -33,7 +34,9 @@ number and bank.
   which answers 401 `{ errorCajaDesafio }` while the approval is pending; the panel says "Abre la
   aplicación Mi Pass para autorizar la operación" (no push notification may arrive: open the app).
   After approval the page sends the same edit with the approved token (`tkn` header); its 200
-  completes the edit. Implemented as `destinatarios edit`; live completion still pending.
+  `{ codigo, idBeneficario, mensaje, cuentas, fechaFinTrx }` completes the edit and the panel shows
+  the receipt. Completed live on 2026-10-31 (name and two aliases, approved about 15 s after the
+  click, verified in the agenda) through a diagnostic run of the same steps as `destinatarios edit`.
 
 The row trash in the agenda list (outside the panel) opens a different modal that is not used.
 
