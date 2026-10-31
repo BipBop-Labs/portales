@@ -4,7 +4,8 @@
 - Live validation: one immediate CLP 1 transfer to an agenda recipient at Banco de Chile completed
   through a diagnostic run of these steps; the movements view then showed the debit. A transfer to
   another bank's account was rejected by the bank after Mi Pass ("El número de cuenta es
-  incorrecto, por favor verificar."), with no debit. No public command exists yet.
+  incorrecto, por favor verificar."), with no debit. `transferencias prepare` was run live
+  (read-only); `transferencias create` implements these steps and is pending its first live run.
 - Effect: `destructive` (moves money)
 
 ## Observed flow
@@ -41,3 +42,20 @@
 - The page warns that, for a new or edited recipient account, the first 12 hours have an
   accumulated limit of CLP 350,000 per destination bank or account type.
 - Verify a completed transfer in `movimientos list` (default view), never from the receipt alone.
+
+## Commands
+
+```text
+portales bancochile-personas transferencias prepare --profile <p> --recipient-id <id> --account-id <id> --amount <clp> [--message <text>]
+portales bancochile-personas transferencias create  --profile <p> --recipient-id <id> --account-id <id> --amount <clp> [--message <text>] --confirm <confirmation>
+```
+
+`prepare` (`read`) checks the account in the live agenda and the amount against the current
+account's available balance, and returns the preview and a confirmation bound to the order, the
+destination account and the origin. `create` (`destructive`) re-checks, records the origin's
+movement IDs, fills the form, refuses to click `CONFIRMAR` unless the bank's summary shows the
+requested destination account and amount, clicks it once, clicks the Mi Pass control once
+(`awaiting-mipass` on STDERR), waits up to five minutes, and succeeds only when exactly one new
+debit of the amount appears in the movements. A rejection before Mi Pass or an expired challenge
+reports that nothing was transferred; anything uncertain is `REMOTE_STATE_AMBIGUOUS`. Only the
+current account as origin and immediate transfers are supported.
