@@ -20,6 +20,8 @@ import { hasExactRecipientDeleteQuestion } from './recipient-delete.js';
 import { bciContract, describeBciPage, requireBciPageState } from './page-state.js';
 import { classifyPage, type Classification, type PageDescription } from '../../../../packages/runtime/src/page-state.js';
 import { sanitizeRoute } from '../../../../packages/runtime/src/observation.js';
+import { headedChromeOptions } from '../../../../packages/runtime/src/browser-session.js';
+import { requireUnique } from '../../../../packages/runtime/src/locators.js';
 
 export const publicLoginUrl = 'https://www.bci.cl/corporativo/banco-en-linea/pyme';
 export const authenticatedShellUrl = 'https://bel.bci.cl/cl/bci/aplicaciones/contenidoLayoutOSSPyme.jsf';
@@ -70,28 +72,7 @@ export function privateBciPaths(profile: string, stateRoot: string, dataRoot: st
 type PersistentLaunchOptions = Parameters<BrowserType['launchPersistentContext']>[1];
 
 export function browserLaunchOptions(proxyServer: string | undefined): PersistentLaunchOptions {
-  return {
-    acceptDownloads: true,
-    channel: 'chrome',
-    headless: false,
-    ...(proxyServer === undefined ? {} : { proxy: { server: proxyServer } }),
-  };
-}
-
-async function requireUnique(locator: Locator, description: string): Promise<Locator> {
-  try {
-    await locator.first().waitFor({ state: 'visible', timeout: 30_000 });
-  } catch {
-    throw new PortalError('PORTAL_CHANGED', `Expected exactly one ${description}.`);
-  }
-  const visible: Locator[] = [];
-  for (const candidate of await locator.all()) {
-    if (await candidate.isVisible()) visible.push(candidate);
-  }
-  if (visible.length !== 1) {
-    throw new PortalError('PORTAL_CHANGED', `Expected exactly one ${description}.`);
-  }
-  return visible[0] as Locator;
+  return headedChromeOptions(proxyServer);
 }
 
 async function requireUniqueVisible(locator: Locator, description: string): Promise<Locator> {

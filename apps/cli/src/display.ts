@@ -1,4 +1,5 @@
 import { spawn as nodeSpawn } from 'node:child_process';
+import { writeSync } from 'node:fs';
 import { constants } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
@@ -16,7 +17,7 @@ interface SignalSource {
 type Spawn = (
   command: string,
   args: string[],
-  options: { stdio: 'inherit'; env: NodeJS.ProcessEnv; detached: true },
+  options: { stdio: ['inherit', 'inherit', 'inherit', number]; env: NodeJS.ProcessEnv; detached: true },
 ) => ChildHandle;
 
 interface VirtualDisplayOptions {
@@ -30,22 +31,27 @@ interface VirtualDisplayOptions {
   stderr?: (value: string) => void;
 }
 
-/** Runs BCI in an invisible headed browser under Xvfb on Linux while keeping `portales` as the only public interface. */
+/** Services whose portals are driven by headed Chrome on a private virtual display. */
+const VIRTUAL_DISPLAY_SERVICES = new Set(['bci-pyme', 'bancochile-personas']);
+
+/** Runs bank portals in an invisible headed browser under Xvfb on Linux while keeping `portales` as the only public interface. */
 export function runWithVirtualDisplayIfNeeded(
   args: string[],
   options: VirtualDisplayOptions = {},
 ): Promise<number> | null {
   const env = options.env ?? process.env;
   const platform = options.platform ?? process.platform;
-  if ((args[1] === 'auth' && args[2] === 'setup') || args[0] !== 'bci-pyme' || platform !== 'linux'
+  if ((args[1] === 'auth' && args[2] === 'setup') || !VIRTUAL_DISPLAY_SERVICES.has(args[0] ?? '') || platform !== 'linux'
     || args.includes('--help') || env.PORTALES_XVFB_ACTIVE === '1') return null;
 
   const spawn = options.spawn ?? nodeSpawn;
   const executable = options.executable ?? process.execPath;
   const entrypoint = options.entrypoint ?? fileURLToPath(import.meta.url).replace(/display\.js$/u, 'main.js');
   const child = spawn('xvfb-run', ['-a', executable, entrypoint, ...args], {
-    stdio: 'inherit',
-    env: { ...env, PORTALES_XVFB_ACTIVE: '1' },
+    // Ubuntu's xvfb-run runs the command with `2>&1`, which would put diagnostics on STDOUT.
+    // The real STDERR is handed to the child as fd 3 and announced through the environment.
+    stdio: ['inherit', 'inherit', 'inherit', 2],
+    env: { ...env, PORTALES_XVFB_ACTIVE: '1', PORTALES_STDERR_FD: '3' },
     detached: true,
   });
   const signalSource = options.signalSource ?? process;
@@ -95,4 +101,11 @@ export function runWithVirtualDisplayIfNeeded(
       finish(code ?? (signal ? 128 + constants.signals[signal] : 0));
     });
   });
+}
+
+/** Diagnostics writer: the inherited STDERR descriptor when running under xvfb-run, else process.stderr. */
+export function stderrWriter(env: NodeJS.ProcessEnv = process.env): (value: string) => void {
+  const fd = Number(env.PORTALES_STDERR_FD);
+  if (Number.isInteger(fd) && fd > 2) return (value) => { writeSync(fd, value); };
+  return (value) => { process.stderr.write(value); };
 }

@@ -37,7 +37,8 @@ export interface DoctorProbes {
   chromiumExecutable(): Promise<string | null>;
   secretService(): Promise<SecretServiceProbe>;
   /** Earliest ISO expiry among stored BCI cookies, `'none'` when no session file exists. */
-  bciSession(profile: string): Promise<{ present: boolean; earliestExpiry: string | null }>;
+  /** Saved browser session (`portales/<service>/<profile>/browser/session-state.json`): presence and earliest cookie expiry only. */
+  browserSession(service: string, profile: string): Promise<{ present: boolean; earliestExpiry: string | null }>;
   siiSession(profile: string): Promise<{ present: boolean; www2ExpiresAt: string | null } | 'unavailable'>;
   breaker(service: string, profile: string): Promise<boolean | 'unsupported'>;
   env: NodeJS.ProcessEnv;
@@ -82,8 +83,8 @@ export function defaultProbes(env: NodeJS.ProcessEnv = process.env): DoctorProbe
         return /not activatable|dbus|d-bus|failed|cannot|error/iu.test(text) ? 'unavailable' : 'reachable';
       }
     },
-    async bciSession(profile) {
-      const path = join(roots.state, 'portales', 'bci-pyme', profile, 'browser', 'session-state.json');
+    async browserSession(service, profile) {
+      const path = join(roots.state, 'portales', service, profile, 'browser', 'session-state.json');
       try {
         const parsed = JSON.parse(await readFile(path, 'utf8')) as { cookies?: { expires?: number }[] };
         const expiries = (parsed.cookies ?? []).map((cookie) => cookie.expires ?? -1).filter((value) => value > 0);
@@ -104,14 +105,15 @@ export function defaultProbes(env: NodeJS.ProcessEnv = process.env): DoctorProbe
       }
     },
     async breaker(service, profile) {
-      if (service !== 'bci-pyme' && service !== 'sii') return 'unsupported';
+      if (SERVICES[service]?.keyring !== true) return 'unsupported';
       return stat(join(roots.state, 'portales', service, 'login-breakers', profile)).then(() => true, () => false);
     },
   };
 }
 
-const SERVICES: Record<string, { browser: BrowserRequirement; needs: string[]; keyring: boolean; session: 'bci' | 'sii' | 'none' }> = {
-  'bci-pyme': { browser: 'headed', needs: ['xvfb-run'], keyring: true, session: 'bci' },
+const SERVICES: Record<string, { browser: BrowserRequirement; needs: string[]; keyring: boolean; session: 'browser' | 'sii' | 'none' }> = {
+  'bci-pyme': { browser: 'headed', needs: ['xvfb-run'], keyring: true, session: 'browser' },
+  'bancochile-personas': { browser: 'headed', needs: ['xvfb-run'], keyring: true, session: 'browser' },
   sag: { browser: 'none', needs: ['pdftotext'], keyring: false, session: 'none' },
   sii: { browser: 'headless', needs: [], keyring: true, session: 'sii' },
 };
@@ -187,13 +189,13 @@ export async function runDoctor(input: { service?: string; profile: string }, pr
   for (const slug of services) {
     const definition = SERVICES[slug];
     if (definition === undefined) continue;
-    if (definition.session === 'bci') {
-      const session = await probes.bciSession(input.profile);
+    if (definition.session === 'browser') {
+      const session = await probes.browserSession(slug, input.profile);
       const expired = session.earliestExpiry !== null && Date.parse(session.earliestExpiry) < probes.now().getTime();
       checks.push(!session.present
-        ? { name: `${slug}:session`, status: 'warn', detail: 'No saved browser session for this profile.', nextAction: `portales bci-pyme auth login --profile ${input.profile}` }
+        ? { name: `${slug}:session`, status: 'warn', detail: 'No saved browser session for this profile.', nextAction: `portales ${slug} auth login --profile ${input.profile}` }
         : expired
-          ? { name: `${slug}:session`, status: 'warn', detail: 'A saved session exists but at least one cookie has expired.', nextAction: `portales bci-pyme auth login --profile ${input.profile}` }
+          ? { name: `${slug}:session`, status: 'warn', detail: 'A saved session exists but at least one cookie has expired.', nextAction: `portales ${slug} auth login --profile ${input.profile}` }
           : { name: `${slug}:session`, status: 'ok', detail: 'A saved session is present (local check only).' });
     } else if (definition.session === 'sii') {
       const session = await probes.siiSession(input.profile);
