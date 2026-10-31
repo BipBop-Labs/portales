@@ -3,12 +3,14 @@ import { readMovements, type Movement } from './movements.js';
 import { readRecipients, type Recipient } from './recipients.js';
 import { deleteAccount, editRecipient, toggleFavorite, type AccountTarget, type EditProgress, type RecipientEdit } from './recipient-writes.js';
 import { PortalSession } from './session.js';
+import { transfer, type TransferOrder, type TransferProgress } from './transfer.js';
 import type { AccountsPortal } from '../tasks/cuentas.js';
 import type { RecipientsPortal } from '../tasks/destinatarios.js';
 import type { RecipientWritePortal } from '../tasks/destinatarios-write.js';
+import type { TransferPortal } from '../tasks/transferencias.js';
 
 /** The authenticated personas portal as the tasks see it. */
-export class PlaywrightPortal implements RecipientsPortal, AccountsPortal, RecipientWritePortal {
+export class PlaywrightPortal implements RecipientsPortal, AccountsPortal, RecipientWritePortal, TransferPortal {
   private constructor(private readonly session: PortalSession) {}
 
   static async open(profile: string): Promise<PlaywrightPortal> {
@@ -37,6 +39,10 @@ export class PlaywrightPortal implements RecipientsPortal, AccountsPortal, Recip
 
   editRecipient(edit: RecipientEdit, progress: EditProgress): Promise<{ miPass: boolean }> {
     return editRecipient(this.session.page, edit, progress);
+  }
+
+  transfer(order: TransferOrder, progress: TransferProgress): Promise<{ miPass: boolean }> {
+    return transfer(this.session.page, order, progress);
   }
 
   close(): Promise<void> {

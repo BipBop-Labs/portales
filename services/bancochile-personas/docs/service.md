@@ -7,8 +7,8 @@
 - Authentication: explicit, one attempt, no automatic retry
 - Supported effects: authentication, recipient listing, own accounts and account movements.
   Recipient changes: favourite and name/alias edit with Mi Pass (`write`), deleting one account
-  (`destructive`). Transfers: flow observed and one completed live
-  ([contract](contracts/transferencias.md)), command pending. Planned, in order: cartola, credit-card statement, transfers, credit-card payment. Transfers
+  (`destructive`). Transfers: `transferencias prepare` (`read`) and `transferencias create`
+  (`destructive`, Mi Pass) ([contract](contracts/transferencias.md)). Planned, in order: cartola, credit-card statement, transfers, credit-card payment. Transfers
   and card payments will be `destructive` operations with prepare, explicit confirmation, one
   execution and live verification. Business banking
   (`portalempresas`) is out of scope.
@@ -104,6 +104,17 @@ portales bancochile-personas movimientos list --profile default --account <numbe
 dates returns the portal's default view (about 45 days, including movements already made that post
 on a later business day); with dates it filters by accounting date, both days included, at most 45
 days per call ([contract](contracts/cuentas-movimientos.md)).
+
+## Transfers
+
+```text
+portales bancochile-personas transferencias prepare --profile default --recipient-id <id> --account-id <id> --amount 1000 --message "..."
+portales bancochile-personas transferencias create --profile default --recipient-id <id> --account-id <id> --amount 1000 --message "..." --confirm <confirmation>
+```
+
+Immediate transfers from the current account to an agenda recipient account. Approve Mi Pass in the
+app within about three minutes. Success is verified as a new debit in the movements; never repeat a
+transfer after an error before checking `movimientos list`.
 
 ## Data handling
 

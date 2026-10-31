@@ -4,6 +4,7 @@ import { stateRoot as defaultStateRoot, dataRoot as defaultDataRoot } from '../.
 import type { CliDependencies } from '../dependencies.js';
 import { breakerStatus, logout, status } from '../../../../services/bancochile-personas/src/tasks/auth.js';
 import { listCuentas, listMovimientos, movementRange, type AccountsPortal } from '../../../../services/bancochile-personas/src/tasks/cuentas.js';
+import { createTransfer, prepareTransfer, validateTransfer, type TransferPortal } from '../../../../services/bancochile-personas/src/tasks/transferencias.js';
 import { executeRecipientWrite, prepareRecipientWrite, type RecipientWrite, type RecipientWritePortal } from '../../../../services/bancochile-personas/src/tasks/destinatarios-write.js';
 import { listDestinatarios, showDestinatario, type RecipientQuery, type RecipientsPortal } from '../../../../services/bancochile-personas/src/tasks/destinatarios.js';
 
@@ -23,7 +24,7 @@ function roots(context: Parameters<Spec['run']>[1]) {
   };
 }
 
-async function withPortal<T>(context: Parameters<Spec['run']>[1], profile: string, work: (portal: RecipientsPortal & AccountsPortal & RecipientWritePortal) => Promise<T>): Promise<T> {
+async function withPortal<T>(context: Parameters<Spec['run']>[1], profile: string, work: (portal: RecipientsPortal & AccountsPortal & RecipientWritePortal & TransferPortal) => Promise<T>): Promise<T> {
   if (context.deps.openBancoChilePortal === undefined) throw new PortalError('UNSUPPORTED_CAPABILITY', 'The Banco de Chile portal is not wired in this build.');
   context.stage('session-check');
   const portal = await context.deps.openBancoChilePortal(profile);
@@ -37,6 +38,7 @@ async function withPortal<T>(context: Parameters<Spec['run']>[1], profile: strin
   }
 }
 
+const TRANSFERS_CONTRACT = 'services/bancochile-personas/docs/contracts/transferencias.md';
 const WRITES_CONTRACT = 'services/bancochile-personas/docs/contracts/destinatarios-escritura.md';
 const target = [
   { name: 'recipient-id', kind: 'string', required: true, description: 'Recipient ID.', discoverWith: 'portales bancochile-personas destinatarios show --profile <profile> --name <words>' },
@@ -208,9 +210,45 @@ const commands: Spec[] = [
       return withPortal(context, input.profile as string, (portal) => executeRecipientWrite({ profile: input.profile as string, write, confirm, progress }, portal));
     },
   })),
+  ...(['prepare', 'create'] as const).map((step): Spec => ({
+    service: 'bancochile-personas', path: ['transferencias', step],
+    summary: step === 'prepare'
+      ? 'Preview an immediate transfer to an agenda recipient account and return its confirmation. Moves no money.'
+      : 'Make one immediate transfer to an agenda recipient account, after confirmation and Mi Pass, and verify the debit.',
+    description: step === 'prepare'
+      ? 'Checks the recipient account in the live agenda and the amount against the current account\'s available balance.'
+      : 'Run transferencias prepare first and pass its confirmation. When the bank asks for Mi Pass, STDERR reports awaiting-mipass: open the Mi Pass app and approve within about three minutes, without stopping the command. Success requires a new debit of the amount in the movements. Never retried; on any doubt, inspect movimientos list before anything else.',
+    effect: step === 'prepare' ? 'read' : 'destructive', auth: 'session', browser: 'headed', profile: 'required',
+    options: [
+      { name: 'recipient-id', kind: 'string', required: true, description: 'Recipient ID.', discoverWith: 'portales bancochile-personas destinatarios show --profile <profile> --name <words>' },
+      { name: 'account-id', kind: 'string', required: true, description: 'Recipient account ID (accounts[].accountId).', discoverWith: 'portales bancochile-personas destinatarios show --profile <profile> --id <recipient-id>' },
+      { name: 'amount', kind: 'string', required: true, description: 'Whole pesos, at least 1, no separators.' },
+      { name: 'message', kind: 'string', description: 'Message for the recipient, up to 50 characters.' },
+    ],
+    ...(step === 'create' ? { confirm: { description: 'Confirmation returned by transferencias prepare.' } } : {}),
+    output: { description: step === 'prepare' ? '{ preview: { origin, destination, amount, message, effect, authorization }, confirmation, nextCommand }' : '{ outcome: "transferred", miPass, preview, debit }' },
+    errors: ['INVALID_INPUT', 'CONFIRMATION_REQUIRED', 'ADDITIONAL_AUTH_REQUIRED', 'AUTHORIZATION_DENIED', 'REMOTE_STATE_AMBIGUOUS', ...sessionErrors],
+    contractRef: TRANSFERS_CONTRACT, contractVersion: '2026-10-31',
+    discoverWith: ['portales bancochile-personas destinatarios show --profile <profile> --name <words>'],
+    run: (input, context) => {
+      const order = validateTransfer({ recipientId: input.options['recipient-id'], accountId: input.options['account-id'], amount: input.options.amount, message: input.options.message });
+      const profile = input.profile as string;
+      if (step === 'prepare') return withPortal(context, profile, (portal) => prepareTransfer({ profile, order }, portal));
+      if (typeof input.options.confirm !== 'string') {
+        throw new PortalError('CONFIRMATION_REQUIRED', 'Run transferencias prepare and pass its --confirm.', {
+          recovery: { nextCommand: `portales bancochile-personas transferencias prepare --profile ${profile} --recipient-id ${order.recipientId} --account-id ${order.accountId} --amount ${String(order.amount)}` },
+        });
+      }
+      const confirm = input.options.confirm;
+      const progress = (stage: 'awaiting-mipass' | 'verifying-mipass') => {
+        context.stderr(JSON.stringify({ schemaVersion: '1', runId: context.runId, service: 'bancochile-personas', operation: 'transferencias.create', stage: 'verify', detail: stage }));
+      };
+      return withPortal(context, profile, (portal) => createTransfer({ profile, order, confirm, progress }, portal));
+    },
+  })),
 ];
 
 export const bancoChilePersonasService: ServiceSpec<CliDependencies> = {
-  slug: 'bancochile-personas', title: 'Banco de Chile Personas', description: 'Banco de Chile personal banking: authentication, transfer recipients, own accounts and movements.',
+  slug: 'bancochile-personas', title: 'Banco de Chile Personas', description: 'Banco de Chile personal banking: authentication, transfer recipients, own accounts, movements and transfers.',
   docs: SERVICE_DOC, commands,
 };

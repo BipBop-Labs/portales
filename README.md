@@ -9,7 +9,7 @@ Portales gives agents a place to build, use, and improve their own tools for ext
 - `sii`: native Chilean SII authentication, RCV, and electronic-invoicing operations.
 - `sag`: live declaration choices, a private-input preview, and verified receipt downloads; automatic submission is not implemented.
 - `bci-pyme`: BCI's business banking portal.
-- `bancochile-personas`: Banco de Chile's personal banking portal (authentication, transfer recipients, own accounts and movements so far).
+- `bancochile-personas`: Banco de Chile's personal banking portal (authentication, recipients, own accounts, movements and transfers so far).
 
 Service specifications:
 
