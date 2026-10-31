@@ -4,6 +4,7 @@ import { stateRoot as defaultStateRoot, dataRoot as defaultDataRoot } from '../.
 import type { CliDependencies } from '../dependencies.js';
 import { breakerStatus, logout, status } from '../../../../services/bancochile-personas/src/tasks/auth.js';
 import { listCuentas, listMovimientos, movementRange, type AccountsPortal } from '../../../../services/bancochile-personas/src/tasks/cuentas.js';
+import { executeRecipientWrite, prepareRecipientWrite, type RecipientWrite, type RecipientWritePortal } from '../../../../services/bancochile-personas/src/tasks/destinatarios-write.js';
 import { listDestinatarios, showDestinatario, type RecipientQuery, type RecipientsPortal } from '../../../../services/bancochile-personas/src/tasks/destinatarios.js';
 
 type Spec = CommandSpec<CliDependencies>;
@@ -22,7 +23,7 @@ function roots(context: Parameters<Spec['run']>[1]) {
   };
 }
 
-async function withPortal<T>(context: Parameters<Spec['run']>[1], profile: string, work: (portal: RecipientsPortal & AccountsPortal) => Promise<T>): Promise<T> {
+async function withPortal<T>(context: Parameters<Spec['run']>[1], profile: string, work: (portal: RecipientsPortal & AccountsPortal & RecipientWritePortal) => Promise<T>): Promise<T> {
   if (context.deps.openBancoChilePortal === undefined) throw new PortalError('UNSUPPORTED_CAPABILITY', 'The Banco de Chile portal is not wired in this build.');
   context.stage('session-check');
   const portal = await context.deps.openBancoChilePortal(profile);
@@ -34,6 +35,45 @@ async function withPortal<T>(context: Parameters<Spec['run']>[1], profile: strin
   } finally {
     await portal.close();
   }
+}
+
+const WRITES_CONTRACT = 'services/bancochile-personas/docs/contracts/destinatarios-escritura.md';
+const target = [
+  { name: 'recipient-id', kind: 'string', required: true, description: 'Recipient ID.', discoverWith: 'portales bancochile-personas destinatarios show --profile <profile> --name <words>' },
+  { name: 'account-id', kind: 'string', description: 'Account ID (accounts[].accountId); required for favorite and delete-account.', discoverWith: 'portales bancochile-personas destinatarios show --profile <profile> --id <recipient-id>' },
+] as const;
+const favoriteOption = { name: 'favorite', kind: 'enum', values: ['true', 'false'], description: 'Target favourite state.' } as const;
+const editOptions = [
+  { name: 'name', kind: 'string', description: 'New recipient name (accents allowed).' },
+  { name: 'alias', kind: 'string', repeatable: true, description: 'New alias for one account, as <account-id>=<alias> (repeatable, up to 100 characters).' },
+] as const;
+
+function recipientWrite(action: RecipientWrite['action'], options: Record<string, unknown>): RecipientWrite {
+  const recipientId = options['recipient-id'] as string;
+  if (action === 'edit') {
+    const name = typeof options.name === 'string' ? options.name.trim() : undefined;
+    const aliases = ((options.alias as string[] | undefined) ?? []).map((pair) => {
+      const separator = pair.indexOf('=');
+      const alias = pair.slice(separator + 1).trim();
+      if (separator <= 0 || alias.length === 0 || alias.length > 100) {
+        throw invalidInput('--alias must be <account-id>=<alias> with 1 to 100 characters.', [{ field: '--alias', expected: '<account-id>=<alias>', received: pair }]);
+      }
+      return { accountId: pair.slice(0, separator), alias };
+    });
+    if (name === '' || (name === undefined && aliases.length === 0)) {
+      throw invalidInput('Give --name and/or at least one --alias.', [{ field: '--name', expected: 'non-empty name' }, { field: '--alias', expected: '<account-id>=<alias>' }]);
+    }
+    return { action, recipientId, aliases, ...(name === undefined ? {} : { name }) };
+  }
+  if (typeof options['account-id'] !== 'string') {
+    throw invalidInput('--account-id is required for this action.', [{ field: '--account-id', expected: 'account ID', discoverWith: 'portales bancochile-personas destinatarios show --profile <profile> --id <recipient-id>' }]);
+  }
+  const ids = { recipientId, accountId: options['account-id'] };
+  if (action === 'delete-account') return { action, ...ids };
+  if (options.favorite !== 'true' && options.favorite !== 'false') {
+    throw invalidInput('--favorite true|false is required for the favorite action.', [{ field: '--favorite', expected: 'true or false' }]);
+  }
+  return { action, ...ids, favorite: options.favorite === 'true' };
 }
 
 const commands: Spec[] = [
@@ -127,6 +167,47 @@ const commands: Spec[] = [
       return withPortal(context, input.profile as string, (portal) => listMovimientos({ profile: input.profile as string, account: input.options.account as string, ...dates }, portal));
     },
   },
+  {
+    service: 'bancochile-personas', path: ['destinatarios', 'prepare'], summary: 'Preview a recipient change against the live agenda and return its confirmation. Changes nothing.',
+    effect: 'read', auth: 'session', browser: 'headed', profile: 'required',
+    options: [
+      { name: 'action', kind: 'enum', values: ['favorite', 'delete-account', 'edit'], required: true, description: 'Change to prepare.' },
+      ...target, favoriteOption, ...editOptions,
+    ],
+    output: { description: '{ preview: { action, recipient, account, change, effect }, confirmation, nextCommand }' },
+    errors: ['INVALID_INPUT', ...sessionErrors], contractRef: WRITES_CONTRACT, contractVersion: OBSERVED,
+    run: (input, context) => {
+      const write = recipientWrite(input.options.action as RecipientWrite['action'], input.options);
+      return withPortal(context, input.profile as string, (portal) => prepareRecipientWrite({ profile: input.profile as string, write }, portal));
+    },
+  },
+  ...([
+    ['favorite', 'write', 'Mark or unmark one recipient account as favourite, once, after confirmation.', 'The portal applies this change immediately, without Mi Pass.'],
+    ['delete-account', 'destructive', 'Delete one account of a recipient from the agenda, once, after confirmation. The recipient\'s other accounts stay.', 'The portal applies this change immediately, without Mi Pass.'],
+    ['edit', 'write', 'Change a recipient\'s name and/or account aliases, once, after confirmation; may require Mi Pass.', 'When the bank asks for Mi Pass, STDERR reports awaiting-mipass and the command waits up to five minutes for the approval on the phone. Do not stop it or run another command meanwhile.'],
+  ] as const).map(([action, effect, summary, note]): Spec => ({
+    service: 'bancochile-personas', path: ['destinatarios', action], summary,
+    description: `Run destinatarios prepare first and pass its confirmation. ${note} The result is verified by re-reading the agenda and never retried.`,
+    effect, auth: 'session', browser: 'headed', profile: 'required',
+    options: action === 'favorite' ? [...target, { ...favoriteOption, required: true }] : action === 'edit' ? [target[0], ...editOptions] : [...target],
+    confirm: { description: 'Confirmation returned by destinatarios prepare.' },
+    output: { description: '{ outcome: "updated" | "deleted" | "unchanged", miPass?, recipient }' },
+    errors: ['INVALID_INPUT', 'CONFIRMATION_REQUIRED', 'REMOTE_STATE_AMBIGUOUS', ...sessionErrors], contractRef: WRITES_CONTRACT, contractVersion: OBSERVED,
+    discoverWith: ['portales bancochile-personas destinatarios prepare --profile <profile> --action ' + action + ' --recipient-id <id> --account-id <id>'],
+    run: (input, context) => {
+      const write = recipientWrite(action, input.options);
+      if (typeof input.options.confirm !== 'string') {
+        throw new PortalError('CONFIRMATION_REQUIRED', `Run destinatarios prepare --action ${action} and pass its --confirm.`, {
+          recovery: { nextCommand: `portales bancochile-personas destinatarios prepare --profile ${input.profile as string} --action ${action} --recipient-id <id> --account-id <id>` },
+        });
+      }
+      const confirm = input.options.confirm;
+      const progress = (stage: 'awaiting-mipass' | 'verifying-mipass') => {
+        context.stderr(JSON.stringify({ schemaVersion: '1', runId: context.runId, service: 'bancochile-personas', operation: `destinatarios.${action}`, stage: 'verify', detail: stage }));
+      };
+      return withPortal(context, input.profile as string, (portal) => executeRecipientWrite({ profile: input.profile as string, write, confirm, progress }, portal));
+    },
+  })),
 ];
 
 export const bancoChilePersonasService: ServiceSpec<CliDependencies> = {
