@@ -83,6 +83,7 @@ throw new PortalError('CONTRACT_MISMATCH', 'Expected 1 visible download control,
 - A message states the smallest structural expectation versus observation. It never contains portal text, URLs with query strings, account data or exception internals.
 - `PORTAL_CHANGED` is legacy. New code uses `CONTRACT_MISMATCH` for structure, `PROVIDER_ERROR` for an error page, `READINESS_TIMEOUT` for a missing state, `DOWNLOAD_INVALID` for bad bytes, `LOCAL_DEPENDENCY_MISSING` and `BROWSER_LAUNCH_FAILED` for the machine.
 - Foreign errors are mapped once, at the command boundary, by a single helper (`services/sii/src/portales-errors.ts` is the model). Unknown errors become `INTERNAL` with a static message.
+- In a write task, wrap everything from the submitting request through the verification read so a failure there becomes `REMOTE_STATE_AMBIGUOUS` (`services/sii/src/tasks/dte.ts` `afterBorradorPost` and the read-back in `services/bci-pyme/src/tasks/destinatarios-write.ts` are the models). Pass `writeOutcome: 'not-sent'` on a pre-submission state check. A portal refusal that kept nothing is `rejected`.
 - Never add a retry to fix an error code. Read-only transport retries exist in one place per service and never cover anything SII or BCI actually answered.
 
 ## 5. Portal modules and contracts

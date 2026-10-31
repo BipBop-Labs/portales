@@ -144,7 +144,7 @@ describe('SII registry commands', () => {
     for (let i = 0; i < 2; i++) {
       const h = harness(runtime);
       expect(await runCli(['sii', 'bte', 'emit', '--snapshot', second.snapshot, '--confirm', second.fingerprint], h.deps)).toBe(7);
-      expect(h.error()).toMatchObject({ code: 'REMOTE_STATE_AMBIGUOUS' });
+      expect(h.error()).toMatchObject({ code: 'REMOTE_STATE_AMBIGUOUS', writeOutcome: 'may-have-applied' });
     }
     expect(posts).toBe(2);
     const otherProfile = harness(fakeRuntime(memoryStore({ session: SESSION, operate: SELF })));

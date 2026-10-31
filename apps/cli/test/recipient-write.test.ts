@@ -6,6 +6,11 @@ import { runCli } from '../src/cli.js';
 import { PortalError } from '../../../services/bci-pyme/src/errors.js';
 import type { RecipientProgress } from '../../../services/bci-pyme/src/portal/types.js';
 
+function lastError(stderr: ReturnType<typeof vi.fn>): unknown {
+  const lines = stderr.mock.calls.map(call => JSON.parse(call[0] as string) as { error?: unknown });
+  return lines.reverse().find(line => line.error !== undefined)?.error;
+}
+
 it('previews without writes, binds confirmation, waits for verification, and saves a pending recipient once, accepting BCI title-cased names', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'portales-synthetic-recipient-'));
   try {
@@ -39,6 +44,7 @@ it('previews without writes, binds confirmation, waits for verification, and sav
     expect(portal.createRecipient).not.toHaveBeenCalled();
     expect(await runCli(['bci-pyme', 'destinatarios', 'create', ...args, '--confirm', 'wrong'], dependencies)).toBe(8);
     expect(portal.createRecipient).not.toHaveBeenCalled();
+    expect(lastError(stderr)).toMatchObject({ code: 'CONFIRMATION_REQUIRED', writeOutcome: 'not-sent', remoteMutationPossible: false });
     portal.close.mockClear(); stdout.mockClear();
     const run = runCli(['bci-pyme', 'destinatarios', 'create', ...args, '--confirm', preview.confirmation], dependencies);
     await waiting;
@@ -59,6 +65,14 @@ it('previews without writes, binds confirmation, waits for verification, and sav
     expect(await runCli(['bci-pyme', 'destinatarios', 'create', ...args, '--confirm', preview.confirmation], dependencies)).toBe(7);
     expect(portal.createRecipient).toHaveBeenCalledTimes(2);
     expect(portal.authorizeRecipient).not.toHaveBeenCalled();
+
+    // Regression: a read-back failure after the submit used to surface as its own code with
+    // remoteMutationPossible false, telling the agent nothing had been sent.
+    portal.createRecipient.mockResolvedValueOnce(undefined);
+    portal.listRecipients.mockResolvedValueOnce([]).mockRejectedValueOnce(new PortalError('CONTRACT_MISMATCH', 'Synthetic list change.'));
+    expect(await runCli(['bci-pyme', 'destinatarios', 'create', ...args, '--confirm', preview.confirmation], dependencies)).toBe(7);
+    expect(lastError(stderr)).toMatchObject({ code: 'REMOTE_STATE_AMBIGUOUS', writeOutcome: 'may-have-applied', remoteMutationPossible: true });
+    expect(portal.createRecipient).toHaveBeenCalledTimes(3);
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 

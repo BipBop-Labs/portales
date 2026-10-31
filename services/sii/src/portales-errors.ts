@@ -1,6 +1,7 @@
 import { PortalError, asPortalError, type PortalErrorCode, type RecoveryMetadata, type ValidationDetail } from '../../../packages/runtime/src/errors.js';
 import {
   CredentialNotFoundError,
+  DteRejectedError,
   LoginFailedError,
   NotAuthenticatedError,
   RateLimitError,
@@ -52,6 +53,9 @@ export function toPortalError(error: unknown, options: MapOptions): PortalError 
   }
   if (error instanceof UnexpectedResponseError) {
     return build('PROVIDER_ERROR', error.message, { stage: 'parse', lastCompletedStage: 'navigate' });
+  }
+  if (error instanceof DteRejectedError) {
+    return build('INVALID_INPUT', error.message, { writeOutcome: 'rejected' }, [{ field: 'invoice', expected: 'a document SII accepts' }]);
   }
   if (error instanceof SiiError) {
     // Portal-shaped rejections (Rcv/Dte/Bte/Representacion/...): SII answered, but not as recorded.

@@ -57,6 +57,7 @@ The Markdown contract lists:
 - request method, content type, required headers, body shape, and token provenance when replay is considered;
 - response shape, encoding, and known error envelope;
 - PII fields to curate or drop;
+- for a read that can legitimately be empty, how a valid empty result looks and which read always returns data for an active account (see `OPERATIONS.md#empty-results`);
 - stop conditions;
 - sanitized fixture provenance.
 

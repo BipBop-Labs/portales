@@ -24,7 +24,7 @@
 // instead of the select) and the session is already scoped; then the empresa is read off the
 // factura form's DTE header box and nothing is POSTed (observed 2026-09-09, #95).
 import { HOSTS } from '../config/index.js';
-import { DteError } from '../errors/index.js';
+import { DteError, DteRejectedError } from '../errors/index.js';
 import { Rut } from '../rut/index.js';
 import type { PortalSession, PublicResponse } from '../seams/index.js';
 
@@ -236,7 +236,7 @@ function assertCgiOk(html: string, step: string): void {
   const expected = CGI_OK[step];
   if (expected && expected.test(html)) return;
   const rejection = serverAlert(html);
-  if (rejection) throw new DteError(`El SII rechazó el documento: ${rejection}`);
+  if (rejection) throw new DteRejectedError(`El SII rechazó el documento: ${rejection}`);
   const msg = /<(?:p|div|td|span|h\d)[^>]*>\s*([^<]{15,300}?)\s*<\//i.exec(
     html.replace(/<script[\s\S]*?<\/script>/gi, ''),
   )?.[1];

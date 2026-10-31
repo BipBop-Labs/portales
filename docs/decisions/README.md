@@ -43,3 +43,4 @@ When a decision changes, add a new note only if historical rationale remains val
 - `2026-09-17-artifact-catalog-and-destinations.md`: indexed artifact descriptors and private destination policy.
 - `2026-09-17-contracts-as-fingerprints-and-step-lists.md`: machine-checkable contracts, observation mode, no self-healing.
 - `2026-09-17-prepare-snapshots-and-auth-surface.md`: prepare with snapshots, uniform auth surface, breakers.
+- `2026-10-31-write-outcome.md`: every session write error says whether the write was sent; no duplicate-window guard.

@@ -19,7 +19,8 @@ import { recordAudit } from '../audit/index.js';
 import { Rut } from '../rut/index.js';
 import { fetchDteAutorizados } from '../portal/dte-public.js';
 import type { DteAutorizados } from '../portal/dte-public.js';
-import { DteError, SiiError, ValidationError } from '../errors/index.js';
+import { DteError, DteRejectedError, SiiError, ValidationError } from '../errors/index.js';
+import { PortalError } from '../../../../packages/runtime/src/errors.js';
 import { DEFAULT_SETTINGS } from '../config/index.js';
 import {
   FORMA_PAGO,
@@ -302,6 +303,21 @@ export async function dteBorradorList(
   }
 }
 
+/** Runs a borrador POST and the reads that follow it. Once the POST may have left, any failure
+ *  except SII's explicit rejection leaves the borrador state unknown, so it is reported as a
+ *  write that may have applied rather than as the read or parse error that surfaced. */
+async function afterBorradorPost<T>(work: () => Promise<T>): Promise<T> {
+  try {
+    return await work();
+  } catch (error: unknown) {
+    if (error instanceof DteRejectedError) throw error;
+    throw new PortalError('REMOTE_STATE_AMBIGUOUS', 'The borrador request may have reached SII. List the borradores before any further save or delete.', {
+      cause: error,
+      recovery: { contractRef: 'docs/SII.md#electronic-invoicing', nextCommand: 'portales sii dte borrador list --empresa <rut> --profile <profile>' },
+    });
+  }
+}
+
 /** Create (or, with `borradorId`, update) a borrador. The document is validated by SII's OWN
  *  client-side validator first, so a rejection surfaces SII's Spanish message verbatim and
  *  costs no write. The new id is resolved by diffing the borradores list around the save —
@@ -321,11 +337,13 @@ export async function dteBorradorSave(
       await runtime.clock.sleep(pacingMs());
       const filled = await fillFactura(session, emp, { ...input, empresa: emp.rut });
       await runtime.clock.sleep(pacingMs());
-      await grabaBorrador(session, filled); // a WRITE — never retried (ADR-004)
-      await runtime.clock.sleep(pacingMs());
-      const id = input.borradorId
-        ? input.borradorId
-        : ((await fetchBorradores(session)).find((b) => !before.includes(b.id))?.id ?? null);
+      const id = await afterBorradorPost(async () => {
+        await grabaBorrador(session, filled); // a WRITE — never retried (ADR-004)
+        await runtime.clock.sleep(pacingMs());
+        return input.borradorId
+          ? input.borradorId
+          : ((await fetchBorradores(session)).find((b) => !before.includes(b.id))?.id ?? null);
+      });
       return {
         id,
         empresa: emp,
@@ -381,7 +399,7 @@ export async function dteBorradorDelete(
       await runtime.clock.sleep(pacingMs());
       const filled = await loadBorrador(session, emp, tipoDte, args.borradorId);
       await runtime.clock.sleep(pacingMs());
-      await eliminaBorrador(session, filled); // a WRITE — never retried (ADR-004)
+      await afterBorradorPost(() => eliminaBorrador(session, filled)); // a WRITE — never retried (ADR-004)
       return { empresa: emp, borradorId: args.borradorId, tipoDte, eliminado: true as const };
     });
     audit(runtime, 'dte_borrador_delete', 'ok', {

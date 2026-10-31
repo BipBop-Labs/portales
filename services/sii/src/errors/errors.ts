@@ -90,6 +90,10 @@ export class PeticionesError extends SiiError {}
  *  `SessionExpiredError`, not this. */
 export class DteError extends SiiError {}
 
+/** SII answered a borrador save or delete with its own rejection alert, so nothing was kept.
+ *  Distinct from an answer SII did not confirm, after which the write may have been applied. */
+export class DteRejectedError extends DteError {}
+
 /** SII rejected a Carpeta Tributaria (`cte-api`) request, the body was not the observed shape
  *  ("scraper roto" — e.g. `/instituciones` not serving an array), the operation is invalid for
  *  its session-keyed contract (a representing pointer, ADR-005), OR the user's `--institucion` is

@@ -278,7 +278,7 @@ export class PlaywrightBciPymePortal implements BciPymePortal {
     await this.page.goto(businessSelectorUrl, { waitUntil: 'domcontentloaded' });
     const businesses = await this.discoverBusinesses();
     const index = businesses.findIndex(({ id }) => id === businessId);
-    if (index < 0) throw new PortalError('REMOTE_STATE_AMBIGUOUS', 'The selected business ID was not discovered.');
+    if (index < 0) throw new PortalError('REMOTE_STATE_AMBIGUOUS', 'The selected business ID was not discovered.', { recovery: { writeOutcome: 'not-sent' } });
     const business = businesses[index] as BusinessOption;
     const links = this.page.locator("a[id*='linkConvenio']");
     if (await links.count() !== businesses.length) throw new PortalError('PORTAL_CHANGED', 'Business controls changed before selection.');
@@ -472,7 +472,7 @@ export class PlaywrightBciPymePortal implements BciPymePortal {
     if (details['RUT'] !== recipient.rut || details['Número de cuenta'] !== recipient.accountNumber
       || details['Banco'] !== recipient.bank || details['Nombre y apellido'] !== recipient.name
       || details['Nombre corto (alias)'] !== recipient.alias || details['Correo electrónico'] !== recipient.email) {
-      throw new PortalError('REMOTE_STATE_AMBIGUOUS', 'Recipient details changed before the operation; no write was submitted.');
+      throw new PortalError('REMOTE_STATE_AMBIGUOUS', 'Recipient details changed before the operation; no write was submitted.', { recovery: { writeOutcome: 'not-sent' } });
     }
     await (await requireUnique(modal.getByRole('button', { name: 'close', exact: true }), 'recipient detail close control')).click();
     await modal.waitFor({ state: 'hidden', timeout: 30_000 });
@@ -503,7 +503,7 @@ export class PlaywrightBciPymePortal implements BciPymePortal {
     const selected = frame.getByRole('row').filter({ has: frame.getByRole('checkbox', { checked: true }) })
       .filter({ has: frame.getByRole('img', { name: 'detalle', exact: true }) });
     if (await selected.count() !== 1 || !await checkbox.isChecked()) {
-      throw new PortalError('REMOTE_STATE_AMBIGUOUS', 'Exactly one recipient must be selected; no approval request was submitted.');
+      throw new PortalError('REMOTE_STATE_AMBIGUOUS', 'Exactly one recipient must be selected; no approval request was submitted.', { recovery: { writeOutcome: 'not-sent' } });
     }
     try {
       await (await requireUnique(frame.getByRole('button', { name: 'Autorizar', exact: true }), 'recipient authorization control')).click();
@@ -535,7 +535,7 @@ export class PlaywrightBciPymePortal implements BciPymePortal {
         lastStage = stage;
         progress(stage);
       }
-      if (isExpiredSessionLocation(this.page.url())) throw new PortalError('SESSION_EXPIRED', 'The session expired during authorization. Reconcile recipients after explicit login; do not resubmit.');
+      if (isExpiredSessionLocation(this.page.url())) throw new PortalError('SESSION_EXPIRED', 'The session expired during authorization. Reconcile recipients after explicit login; do not resubmit.', { recovery: { writeOutcome: 'may-have-applied' } });
       await this.page.waitForTimeout(1_000);
     }
     throw new PortalError('REMOTE_STATE_AMBIGUOUS', 'BCI did not reach a recognized terminal result within five minutes. Run destinatarios list before another request; the phone approval alone is not proof of completion.');
@@ -591,7 +591,7 @@ export class PlaywrightBciPymePortal implements BciPymePortal {
     const { movements } = await this.openMovements(selection.businessId);
     const accounts = await this.currentAccounts(movements);
     if (accounts.length !== 1 || accounts[0]?.id !== selection.accountId) {
-      throw new PortalError('REMOTE_STATE_AMBIGUOUS', 'The selected account is not the current discovered account.');
+      throw new PortalError('REMOTE_STATE_AMBIGUOUS', 'The selected account is not the current discovered account.', { recovery: { writeOutcome: 'not-sent' } });
     }
     await requireUnique(
       movements.locator('fe-oss-widget-accounts-cartola').filter({ hasText: selection.accountId }),

@@ -42,6 +42,12 @@ export type Stage =
   | 'completed'
   | 'failed';
 
+/** What a failed write command did to the portal. `not-sent`: no mutating request left this run.
+ *  `rejected`: the portal answered with an explicit refusal and kept nothing. `may-have-applied`:
+ *  the request may have reached the portal, in this run or an earlier attempt of the same
+ *  prepared intent; reconcile with a read and never resubmit. A verified success is the result itself. */
+export type WriteOutcome = 'not-sent' | 'rejected' | 'may-have-applied';
+
 export interface RecoveryMetadata {
   /** Stage that was executing when the failure surfaced. */
   stage?: Stage;
@@ -57,6 +63,9 @@ export interface RecoveryMetadata {
   safeToRetry?: boolean;
   loginAttempted?: boolean;
   remoteMutationPossible?: boolean;
+  /** Present on every error of a session write command; the runner derives it from
+   *  `remoteMutationPossible` when the throw site did not state it. */
+  writeOutcome?: WriteOutcome;
   contractVersion?: string;
   /** Run that currently holds the lock (`RUN_LOCKED` only). */
   activeRunId?: string;
@@ -119,6 +128,11 @@ export class PortalError extends Error {
     super(message, options.cause === undefined ? undefined : { cause: options.cause });
     this.name = 'PortalError';
     this.recovery = { ...defaults[code], ...options.recovery };
+    // A stated outcome decides the boolean, so a code's default can never contradict the throw site.
+    const outcome = options.recovery?.writeOutcome;
+    if (outcome !== undefined && options.recovery?.remoteMutationPossible === undefined) {
+      this.recovery.remoteMutationPossible = outcome === 'may-have-applied';
+    }
     this.validation = options.validation;
   }
 
@@ -129,6 +143,21 @@ export class PortalError extends Error {
       ...(this.validation === undefined ? {} : { validation: this.validation }),
     });
   }
+}
+
+/** Adds `writeOutcome` to every error of a session write command and strips it elsewhere, so
+ *  agents find it exactly where a portal mutation was in scope. */
+export function withWriteOutcomeFor(effect: 'read' | 'write' | 'destructive', auth: string, failure: PortalError): PortalError {
+  const isPortalWrite = effect !== 'read' && auth === 'session';
+  if (isPortalWrite && failure.recovery.writeOutcome === undefined) {
+    return failure.withRecovery({ writeOutcome: failure.recovery.remoteMutationPossible === true ? 'may-have-applied' : 'not-sent' });
+  }
+  if (!isPortalWrite && failure.recovery.writeOutcome !== undefined) {
+    const recovery = { ...failure.recovery };
+    delete recovery.writeOutcome;
+    return new PortalError(failure.code, failure.message, { recovery, ...(failure.validation === undefined ? {} : { validation: failure.validation }) });
+  }
+  return failure;
 }
 
 /** Builds the actionable validation error the CLI and tasks share. */

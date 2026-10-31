@@ -18,6 +18,7 @@ export function requireExactDiscoveredOption<T extends DiscoveredOption>(
     throw new PortalError(
       'REMOTE_STATE_AMBIGUOUS',
       'The requested label identifies more than one portal option; use an exact discovered ID.',
+      { recovery: { writeOutcome: 'not-sent' } },
     );
   }
   throw new PortalError(

@@ -50,9 +50,14 @@ If persistent logging is introduced for a demonstrated need, keep it outside the
 | `BROWSER_LAUNCH_FAILED`, `PROVIDER_ERROR`, `READINESS_TIMEOUT` | Not a contract problem. Check `doctor`, provider availability, and the run record; do not add delays or broaden selectors. |
 | `CONTRACT_MISMATCH` | Read the smallest structural diff in the error, run `observe` for the operation, review the proposed contract diff, run local tests, verify once live, then update the dated contract. Never auto-apply. |
 | `DOWNLOAD_INVALID` | Inspect the artifact locally with `artifacts verify`; do not trust the file. |
-| `REMOTE_STATE_AMBIGUOUS` | Reconcile with an authorized read. Never repeat the mutation. |
+| `REMOTE_STATE_AMBIGUOUS` | Read `writeOutcome`. `may-have-applied`: reconcile with an authorized read and never repeat the mutation. `not-sent`: the state check stopped before submission; inspect the named listing, then prepare again. |
+| Any error with `writeOutcome: rejected` | The portal refused the document and kept nothing. Correct the input; never resubmit it unchanged. |
 | `RUN_LOCKED` | Inspect `activeRunId` with `runs show`; wait or stop that run. |
 | Live verification unavailable | Finish safe local work and state precisely what remains unverified. |
+
+## Empty results
+
+An empty read can mean no data, wrong input, or a parser that no longer finds the data. Do not report `CONTRACT_MISMATCH` from an empty result alone. First make one read that must return data for any active account in scope, such as the business list for BCI. If it returns data, the page structure still works and the empty result belongs to that input. If it is also empty, observe the operation. This is one diagnostic read, never a retry of the failed one. When a service has such a read, name it in its contract so the next agent does not have to search for it.
 
 ## Durable learning and tests
 

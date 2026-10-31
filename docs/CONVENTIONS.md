@@ -111,6 +111,16 @@ Rules:
 
 `reason`, `stage`, and `nextAction` are static tokens or sentences, never portal text. `validation` appears only on `INVALID_INPUT` and names the exact discovery command. `activeRunId` appears on `RUN_LOCKED`.
 
+`writeOutcome` (added 2026-10-31) appears on every error of a write or destructive command with `auth: session`, and on no other command:
+
+| Value | Meaning | Next step |
+| --- | --- | --- |
+| `not-sent` | No mutating request left this run. | Fix the cause; the prepared intent may be confirmed again. |
+| `rejected` | The portal answered with an explicit refusal and kept nothing. | Correct the document or input; do not resubmit it unchanged. |
+| `may-have-applied` | The request may have reached the portal, in this run or an earlier attempt of the same intent. | Reconcile with the named read. Never resubmit. |
+
+A verified success is the result itself, so there is no `applied` error value. A throw site states the outcome when it knows it, and that decides `remoteMutationPossible`. Otherwise the runner derives it from `remoteMutationPossible`, so any failure after a request may have left must be raised as `REMOTE_STATE_AMBIGUOUS`, never as the read or parse error that surfaced during verification.
+
 ### Lifecycle events (STDERR JSONL)
 
 Every service command emits one line per stage, all sharing the run's `runId`:
@@ -203,7 +213,7 @@ One cross-service taxonomy (`packages/runtime/src/errors.ts`). Every code carrie
 | `READINESS_TIMEOUT` | The expected page state did not appear in time. |
 | `CONTRACT_MISMATCH` | The page structure differs from the dated contract; `PORTAL_CHANGED` is a legacy alias. |
 | `DOWNLOAD_INVALID` | Downloaded bytes failed signature, structure, or identity validation. |
-| `REMOTE_STATE_AMBIGUOUS` | A write may have happened; reconcile with a read, never resubmit. |
+| `REMOTE_STATE_AMBIGUOUS` | Remote state does not match the intent; on a write command, `writeOutcome` says whether anything was sent. Reconcile with a read, never resubmit. |
 | `RUN_LOCKED` | Another run holds this service/profile; `activeRunId` names it. |
 | `SNAPSHOT_EXPIRED`, `SNAPSHOT_STALE` | A prepare snapshot is too old or the portal/account state changed. |
 | `UNSUPPORTED_CAPABILITY` | The operation exists in the catalog but is not implemented for this branch. |
@@ -218,6 +228,7 @@ Provider messages may be attached after redaction. Preserve an authoritative Spa
 - Reversible writes require explicit write intent.
 - Destructive operations require an operation-specific confirmation value, such as a target ID or amount fingerprint, not a generic boolean.
 - Execute once. On ambiguous response, query current state before considering any retry.
+- Mark the boundary where the request may leave. Before it, failures are `not-sent`; after it, every failure, including the verification read, is `may-have-applied` unless the portal explicitly refused (`rejected`).
 - Record the returned identifier immediately and verify the intended account, target, and load-bearing values.
 - Never bypass the portal's own client-side validator. Invoke or reproduce it only after observing its real behavior.
 

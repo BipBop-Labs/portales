@@ -24,12 +24,12 @@ const authorizeSchema = z.object(selection).strict();
 type Action = 'create' | 'authorize' | 'delete';
 type Selection = z.infer<typeof authorizeSchema>;
 
-function matchingRecipient(recipients: Recipient[], target: Selection, bank: string) {
+function matchingRecipient(recipients: Recipient[], target: Selection, bank: string, writeOutcome: 'not-sent' | 'may-have-applied') {
   const rut = (value: string) => value.replace(/[.-]/gu, '').toUpperCase();
   const matches = recipients.filter(recipient => rut(recipient.rut) === rut(target.rut)
     && recipientBankMatches(recipient.bank, bank)
     && recipient.accountNumber.replace(/^0+/u, '') === target.accountNumber.replace(/^0+/u, ''));
-  if (matches.length > 1) throw new PortalError('REMOTE_STATE_AMBIGUOUS', 'Multiple recipients match. Inspect destinatarios list; no write was submitted.');
+  if (matches.length > 1) throw new PortalError('REMOTE_STATE_AMBIGUOUS', 'Multiple recipients match. Inspect destinatarios list.', { recovery: { writeOutcome } });
   return matches[0];
 }
 
@@ -50,14 +50,14 @@ export async function writeDestinatario(
   const business = requireExactDiscoveredOption(await portal.discoverBusinesses(), target.businessId);
   const banks = await portal.discoverRecipientBanks(target.businessId);
   const bank = requireExactDiscoveredOption(banks, target.bankId);
-  const current = matchingRecipient(await portal.listRecipients(target.businessId), target, bank.label);
+  const current = matchingRecipient(await portal.listRecipients(target.businessId), target, bank.label, 'not-sent');
   if (input.action !== 'create' && !current) {
     throw new PortalError('INVALID_INPUT', 'The recipient was not found. Select an existing recipient from destinatarios list.');
   }
   if (input.action === 'create' && current) {
     const creation = createSchema.parse(target);
     if (!sameName(current.name, creation.name) || current.alias !== creation.alias || current.email !== creation.email) {
-      throw new PortalError('REMOTE_STATE_AMBIGUOUS', 'This RUT, bank and account already exist with different details. Inspect destinatarios list; no duplicate was created.');
+      throw new PortalError('REMOTE_STATE_AMBIGUOUS', 'This RUT, bank and account already exist with different details. Inspect destinatarios list; no duplicate was created.', { recovery: { writeOutcome: 'not-sent' } });
     }
   }
   const willWrite = input.action === 'create' ? !current : input.action === 'delete' ? Boolean(current) : current?.status === 'pending';
@@ -77,7 +77,11 @@ export async function writeDestinatario(
   if (input.action === 'create') await portal.createRecipient(createSchema.parse(target), progress);
   else if (input.action === 'delete') await portal.deleteRecipient(target.businessId, current as Recipient);
   else await portal.authorizeRecipient(target.businessId, current as Recipient, progress);
-  const verified = matchingRecipient(await portal.listRecipients(target.businessId), target, bank.label);
+  // The write was sent, so a failed read-back must never be reported as an unsent write.
+  const recipients = await portal.listRecipients(target.businessId).catch((error: unknown) => {
+    throw new PortalError('REMOTE_STATE_AMBIGUOUS', 'The write was submitted but the recipient list could not be read back. Run destinatarios list before any further submission.', { cause: error });
+  });
+  const verified = matchingRecipient(recipients, target, bank.label, 'may-have-applied');
   if (input.action === 'delete') {
     if (verified) throw new PortalError('REMOTE_STATE_AMBIGUOUS', 'The recipient still appears after deletion. Inspect destinatarios list; do not submit again.');
     return { action: input.action, businessId: target.businessId, outcome: 'deleted', recipient: current, changed: true };

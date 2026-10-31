@@ -1,5 +1,5 @@
 import { SCHEMA_VERSION, createStageRecorder } from '../../../packages/runtime/src/events.js';
-import { PortalError, asPortalError, exitCodeFor } from '../../../packages/runtime/src/errors.js';
+import { PortalError, asPortalError, exitCodeFor, withWriteOutcomeFor } from '../../../packages/runtime/src/errors.js';
 import { browserModeFor } from '../../../packages/runtime/src/browser-mode.js';
 import { recordArtifact } from '../../../packages/runtime/src/artifacts.js';
 import { acquireServiceLock, newRunId, pruneRunRecords, writeRunRecord, type RunRecord } from '../../../packages/runtime/src/runs.js';
@@ -37,6 +37,7 @@ export async function runCli(args: string[], dependencies: CliDependencies): Pro
   const startedAt = Date.now();
   const runId = newRunId(new Date(startedAt));
   let envelope: Envelope = { schemaVersion: SCHEMA_VERSION, service: 'portales', operation: 'cli', runId };
+  let command: CommandSpec<CliDependencies> | undefined;
   try {
     if (args.length === 0 || args.includes('--help') || args[0] === 'help') {
       const words = args.filter((word) => word !== '--help' && word !== 'help');
@@ -52,11 +53,12 @@ export async function runCli(args: string[], dependencies: CliDependencies): Pro
       });
     }
     const spec = found.spec;
+    command = spec;
     envelope = { ...envelope, service: spec.service, operation: operationOf(spec) };
     const input = parseArguments(spec, args.slice(found.consumed));
     return await execute(spec, input, { registry, dependencies, env, runId, startedAt, envelope });
   } catch (error: unknown) {
-    const failure = asPortalError(error);
+    const failure = command === undefined ? asPortalError(error) : withWriteOutcomeFor(command.effect, command.auth, asPortalError(error));
     dependencies.stderr(`${JSON.stringify(errorEnvelope(envelope, failure))}\n`);
     return exitCodeFor(failure.code);
   }
@@ -121,7 +123,7 @@ async function execute(
       ...(spec.contractRef === undefined ? {} : { contractRef: spec.contractRef }),
       ...(spec.contractVersion === undefined ? {} : { contractVersion: spec.contractVersion }),
     });
-    const stageAware = failure.recovery.stage === undefined ? failure.withRecovery({ stage: recorder.lastCompleted() ?? 'preflight' }) : failure;
+    const stageAware = withWriteOutcomeFor(spec.effect, spec.auth, failure.recovery.stage === undefined ? failure.withRecovery({ stage: recorder.lastCompleted() ?? 'preflight' }) : failure);
     recorder.stage('failed', stageAware.code);
     record.status = 'failed';
     record.error = { code: stageAware.code, recovery: stageAware.recovery, ...(stageAware.validation === undefined ? {} : { validation: stageAware.validation }) };
