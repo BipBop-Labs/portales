@@ -1,6 +1,7 @@
 import { isValidRut } from '../rut.js';
 import { SecretServiceError, type SecretReader } from '../../../../packages/runtime/src/secret-service.js';
 import { PortalError } from '../errors.js';
+import { asPortalError } from '../../../../packages/runtime/src/errors.js';
 import { requireSafeProfile } from '../auth/login-breaker.js';
 
 export interface BciCredentials { rut: string; password: string }
@@ -59,7 +60,7 @@ export async function loginBciPyme(
     );
   } catch (error: unknown) {
     if (attempt.submitted && !attempt.accepted) await dependencies.breaker.trip(input.profile);
-    throw error;
+    throw asPortalError(error).withRecovery({ loginAttempted: attempt.submitted, safeToRetry: false });
   }
   if (!attempt.accepted) {
     if (attempt.submitted) await dependencies.breaker.trip(input.profile);

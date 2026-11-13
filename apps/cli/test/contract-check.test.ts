@@ -37,6 +37,21 @@ describe('contract check and verify', () => {
     expect(await runCli(['contract', 'check', 'run_20260101000000_deadbeef'], missing.deps)).toBe(2);
   });
 
+  it('observes the public login without opening a session or invoking login', async () => {
+    const h = harness();
+    const observeBciLogin = vi.fn().mockResolvedValue({ states: [{
+      expectedState: 'login-page',
+      description: { routePath: '/corporativo/banco-en-linea/pyme', frameNames: [], markers: [], controlCounts: { 'css #rut_aux': 1, "css input[type='password']": 1 } },
+      classification: { kind: 'login-page', state: 'login-page', diff: [] },
+      ariaSnapshot: '- textbox "RUT"\n- textbox "Clave"',
+    }], stoppedBefore: 'fill', navigationTimedOut: true, documentReadyState: 'interactive' });
+    expect(await runCli(['bci-pyme', 'observe', 'auth.login', '--profile', 'testing'], { ...h.deps, observeBciLogin })).toBe(0);
+    expect(h.json().result).toMatchObject({ stoppedBefore: 'fill', navigationTimedOut: true, documentReadyState: 'interactive' });
+    expect(observeBciLogin).toHaveBeenCalledOnce();
+    expect(h.deps.openSessionPortal).not.toHaveBeenCalled();
+    expect(h.deps.login).not.toHaveBeenCalled();
+  });
+
   it('never reports live verification without --live', async () => {
     const h = harness();
     expect(await runCli(['bci-pyme', 'verify', '--profile', 'testing'], h.deps)).toBe(0);

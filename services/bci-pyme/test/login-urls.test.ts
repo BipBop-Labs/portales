@@ -59,6 +59,14 @@ describe('BCI navigation boundaries', () => {
     expect(click).toHaveBeenCalledWith();
   });
 
+  it('marks submission before a native click whose navigation can time out', async () => {
+    const order: string[] = [];
+    const click = vi.fn(() => { order.push('click'); return Promise.reject(new Error('synthetic timeout')); });
+    await expect(submitObservedLogin({ click }, () => { order.push('submission-started'); })).rejects.toThrow('synthetic timeout');
+    expect(order).toEqual(['submission-started', 'click']);
+    expect(click).toHaveBeenCalledOnce();
+  });
+
   it('probes the business selector once when login ends on the relay', () => {
     expect(shouldProbeAuthenticatedSession('https://bel.bci.cl/LoginJSFGenerico', false)).toBe(true);
     expect(shouldProbeAuthenticatedSession('https://bel.bci.cl/LoginJSFGenerico', true)).toBe(false);
