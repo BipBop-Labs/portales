@@ -35,7 +35,12 @@ async function visibleCount(scope: Scope, item: ControlSelector): Promise<number
 /** Counts a control across the page and every frame, so frame relocation shows up as a diff rather than a silent miss. */
 export async function countAcrossFrames(page: Page, item: ControlSelector): Promise<number> {
   let total = 0;
-  for (const frame of page.frames()) total += await visibleCount(frame, item);
+  for (const frame of page.frames()) {
+    try { total += await visibleCount(frame, item); } catch (error: unknown) {
+      // Tracking/auxiliary frames can detach while the public form remains live.
+      if (!frame.isDetached()) throw error;
+    }
+  }
   return total;
 }
 

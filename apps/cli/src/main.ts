@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { runCli } from './cli.js';
+import { observePublicBciLogin } from '../../../services/bci-pyme/src/portal/login-observation.js';
 import { SecretToolReader } from '../../../packages/runtime/src/secret-service.js';
 import { stateRoot } from '../../../packages/runtime/src/paths.js';
 import { findCommand } from '../../../packages/runtime/src/registry.js';
@@ -24,6 +25,7 @@ if (virtualDisplay !== null) {
   process.exitCode = await runCli(args, {
     registry,
     setup: setupBciPyme,
+    observeBciLogin: observePublicBciLogin,
     openSessionPortal: (profile) => PlaywrightBciPymePortal.open(profile),
     loginSii: (input) => loginSiiWithPortalesProfile(input, { secrets: new SecretToolReader() }),
     setupSii,

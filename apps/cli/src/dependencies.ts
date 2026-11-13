@@ -1,11 +1,13 @@
 import type { BciPymePortal } from '../../../services/bci-pyme/src/portal/types.js';
 import type { Registry } from '../../../packages/runtime/src/registry.js';
+import type { PublicLoginObservation } from '../../../services/bci-pyme/src/portal/login-observation.js';
 import type { DoctorProbes } from '../../../packages/runtime/src/doctor.js';
 
 /** Everything the composition root injects; tests replace the portal-facing members. */
 export interface CliDependencies {
   openSessionPortal(profile: string): Promise<BciPymePortal & { close?: () => Promise<void> }>;
   setup?: (input: { profile: string }) => Promise<unknown>;
+  observeBciLogin?: () => Promise<PublicLoginObservation>;
   login(input: { profile: string }): Promise<unknown>;
   loginSii?: (input: { profile: string }) => Promise<unknown>;
   /** @deprecated No longer used; SII commands are registry-parsed. Kept so older test literals still type-check. */

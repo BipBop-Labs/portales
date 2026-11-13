@@ -29,6 +29,33 @@ The download control placement and identity boundary were re-observed live on 20
 
 The download exports the portal's current movements view. The observed interface did not present a date-range dialog, so the public input does not claim or accept a date range.
 
+## 2026-11-13 public login consent and diagnosis
+
+At the default browser viewport, the optional-cookie banner can cover the native
+login submit control. The public browser confirmed that the exact
+`Rechazar opcionales` button removes this cover. Login checks this optional
+control before entering fields and again immediately before native submission
+because the consent SDK loads asynchronously. It clicks only that exact control,
+waits for it to hide, and never accepts all cookies, forces the login click,
+modifies page attributes, or retries authentication.
+
+`portales bci-pyme observe auth.login --profile <profile>` uses a fresh temporary
+browser profile without keyring access or saved-session restoration, observes
+only the public form, optionally rejects nonessential cookies, and stops before
+field entry. It reports public navigation timeout/readiness facts without raw
+browser errors or values. Authenticated observation operations still explicitly
+require a saved authenticated session.
+
+A login error now names the static failing step. Submission is conservatively
+marked immediately before the native click, since a click can send the form and
+then time out while awaiting navigation. Such an unaccepted attempt trips the
+breaker; an old `loginAttempted: false` default is not evidence that no POST was
+sent. Never enable broad Playwright API logs during credential entry.
+
+Live verification after the correction completed explicit login, an independent
+business/account discovery, prepared selection, and a validated detailed-statement
+download through the public CLI. No authentication retry was added to the adapter.
+
 ## Authentication breaker boundary
 
 Submitting the login form alone does not prove failure. The breaker trips only when authentication fails or remains ambiguous before BCI acceptance is established.

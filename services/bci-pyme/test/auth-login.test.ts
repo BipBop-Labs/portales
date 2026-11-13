@@ -99,6 +99,23 @@ describe('auth.login risk controls', () => {
     expect(breaker.trip).toHaveBeenCalledOnce();
   });
 
+  it('reports actual submission state on a timeout without exposing the underlying error', async () => {
+    for (const submittedFirst of [false, true]) {
+      const breaker = { assertClear: vi.fn(), trip: vi.fn() };
+      const error = Object.assign(new Error('SYNTHETIC_PRIVATE_DETAIL'), { name: 'TimeoutError' });
+      const portal = { authenticate: vi.fn((_credentials: BciCredentials, submitted: () => void) => {
+        if (submittedFirst) submitted();
+        return Promise.reject(error);
+      }) };
+      const result: unknown = await loginBciPyme({ profile: 'synthetic-profile' }, {
+        secrets: { read: vi.fn().mockResolvedValue('{"version":1,"rut":"999999999","password":"synthetic-password"}') }, breaker, portal,
+      }).catch((value: unknown) => value);
+      expect(result).toMatchObject({ code: 'READINESS_TIMEOUT', recovery: { loginAttempted: submittedFirst, safeToRetry: false } });
+      expect(JSON.stringify(result)).not.toContain('SYNTHETIC_PRIVATE_DETAIL');
+      expect(breaker.trip).toHaveBeenCalledTimes(submittedFirst ? 1 : 0);
+    }
+  });
+
   it('a breaker prevents keyring and browser access', async () => {
     const read = vi.fn();
     const authenticate = vi.fn();

@@ -11,6 +11,7 @@ import {
 } from 'playwright';
 import { validateDownloadedFile, type SupportedDownloadMediaType } from '../../../../packages/runtime/src/downloads.js';
 import { PortalError } from '../errors.js';
+import { asPortalError } from '../../../../packages/runtime/src/errors.js';
 import type { BusinessOption } from '../tasks/businesses-list.js';
 import type { AccountOption, BciPymePortal, CartolaSelection, Recipient, RecipientCreation, RecipientProgress } from './types.js';
 import type { BciCredentials, LoginPortal } from '../tasks/auth-login.js';
@@ -25,6 +26,18 @@ export const publicLoginUrl = 'https://www.bci.cl/corporativo/banco-en-linea/pym
 export const authenticatedShellUrl = 'https://bel.bci.cl/cl/bci/aplicaciones/contenidoLayoutOSSPyme.jsf';
 export const businessSelectorUrl = 'https://bel.bci.cl/cl/bci/aplicaciones/seguridad/autenticacion/vista/vistaSelectorConvenio.jsf';
 export const deviceOmitName = /^omitir(?: por ahora)?$/iu;
+
+/** The observed optional-cookie banner can cover native login at the default viewport. */
+export async function dismissOptionalBciCookies(page: Pick<Page, 'getByRole'>): Promise<boolean> {
+  const reject = page.getByRole('button', { name: 'Rechazar opcionales', exact: true });
+  const count = await reject.count();
+  if (count === 0) return false;
+  if (count !== 1) throw new PortalError('CONTRACT_MISMATCH', 'Expected at most one optional-cookie rejection control.');
+  if (!await reject.isVisible()) return false;
+  await reject.click();
+  await reject.waitFor({ state: 'hidden', timeout: 10_000 });
+  return true;
+}
 const detailedWorkbookLabels = [
   'Fecha de transacción',
   'Código de transacción',
@@ -35,7 +48,9 @@ const detailedWorkbookLabels = [
 ] as const;
 
 /** Submits the observed native POST form once while preserving Playwright's navigation lifecycle. */
-export async function submitObservedLogin(control: Pick<Locator, 'click'>): Promise<void> {
+export async function submitObservedLogin(control: Pick<Locator, 'click'>, submissionStarted: () => void = () => undefined): Promise<void> {
+  // Click can submit and then time out awaiting navigation: mark the ambiguous boundary before awaiting it.
+  submissionStarted();
   await control.click();
 }
 
@@ -691,21 +706,35 @@ export class PlaywrightBciLoginPortal implements LoginPortal {
     await chmod(paths.profileDirectory, 0o700);
     const context = await openBrowserSession(paths.profileDirectory, browserLaunchOptions(process.env.PORTALES_BROWSER_PROXY));
     let authenticationAccepted = false;
+    let phase = 'public-navigation';
     try {
       const page = context.pages()[0] ?? await context.newPage();
       await page.goto(publicLoginUrl, { waitUntil: 'domcontentloaded' });
       const before = await detectedStop(page);
       if (before !== undefined) throw before;
 
+      phase = 'optional-cookie-choice';
+      await dismissOptionalBciCookies(page);
+      phase = 'rut-discovery';
       const rut = await requireUnique(page.locator('#rut_aux'), 'RUT field');
+      phase = 'rut-focus';
       await rut.click();
+      phase = 'rut-entry';
       await rut.pressSequentially(credentials.rut);
+      phase = 'password-discovery';
       const password = await requireUnique(page.locator("input[type='password']"), 'password field');
+      phase = 'password-focus';
       await password.click();
+      phase = 'password-entry';
       await password.pressSequentially(credentials.password);
+      phase = 'submit-discovery';
       const enter = await requireUnique(page.getByRole('button', { name: /^ingresar$/iu }), 'INGRESAR button');
-      await submitObservedLogin(enter);
-      submitted();
+      // The consent SDK is asynchronous; handle a banner that appeared while fields were entered.
+      phase = 'optional-cookie-choice';
+      await dismissOptionalBciCookies(page);
+      phase = 'native-submit';
+      await submitObservedLogin(enter, submitted);
+      phase = 'acceptance-check';
 
       const deadline = Date.now() + 60_000;
       let omittedDeviceRegistration = false;
@@ -751,6 +780,8 @@ export class PlaywrightBciLoginPortal implements LoginPortal {
         await page.waitForTimeout(250);
       }
       throw new PortalError('REMOTE_STATE_AMBIGUOUS', 'The login result could not be verified safely.');
+    } catch (error: unknown) {
+      throw asPortalError(error).withRecovery({ nextAction: `BCI login stopped during ${phase}. Do not retry automatically; inspect this exact boundary without logging credentials.` });
     } finally {
       try {
         if (authenticationAccepted) await saveBrowserSession(context, paths.profileDirectory);

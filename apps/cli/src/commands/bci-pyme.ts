@@ -82,7 +82,7 @@ const commands: Spec[] = [
     effect: 'read', auth: 'public', browser: 'headed', profile: 'required',
     output: { description: '{ profile, authenticated: true }' },
     errors: ['CREDENTIALS_NOT_CONFIGURED', 'CREDENTIALS_INVALID', 'KEYRING_LOCKED', 'KEYRING_UNAVAILABLE', 'LOGIN_FAILED', 'ADDITIONAL_AUTH_REQUIRED', 'ACCOUNT_BLOCKED', 'RATE_LIMITED', 'REMOTE_STATE_AMBIGUOUS', 'CONTRACT_MISMATCH', 'BROWSER_LAUNCH_FAILED', 'RUN_LOCKED'],
-    contractRef: `${CONTRACT}#authentication-breaker-boundary`, contractVersion: OBSERVED_UNCHANGED,
+    contractRef: `${CONTRACT}#authentication-breaker-boundary`, contractVersion: '2026-11-13',
     run(input, context) {
       context.stage('navigate');
       return context.deps.login({ profile: input.profile as string });

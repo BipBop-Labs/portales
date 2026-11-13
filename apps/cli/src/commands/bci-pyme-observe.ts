@@ -10,11 +10,11 @@ import { listBusinesses } from '../../../../services/bci-pyme/src/tasks/business
 import { listAccountOptions } from '../../../../services/bci-pyme/src/tasks/options.js';
 
 type Spec = CommandSpec<CliDependencies>;
-const OBSERVABLE = ['businesses.list', 'accounts.options', 'cartolas.download'] as const;
+const OBSERVABLE = ['auth.login', 'businesses.list', 'accounts.options', 'cartolas.download'] as const;
 const CONTRACT = 'services/bci-pyme/docs/contracts/read-only-browser-flow.json';
 
 interface ObservingPortal {
-  observe(operation: typeof OBSERVABLE[number], input: { businessId?: string }): Promise<{ states: Array<{ expectedState: string; description: PageDescription; classification: Classification; ariaSnapshot: string }>; stoppedBefore: string | null }>;
+  observe(operation: Exclude<typeof OBSERVABLE[number], 'auth.login'>, input: { businessId?: string }): Promise<{ states: Array<{ expectedState: string; description: PageDescription; classification: Classification; ariaSnapshot: string }>; stoppedBefore: string | null }>;
 }
 
 function canObserve(portal: unknown): portal is ObservingPortal {
@@ -28,8 +28,8 @@ function markerLabel(marker: { role?: string | undefined; name?: string | undefi
 export const bci_pyme_observeCommands: Spec[] = [
   {
     service: 'bci-pyme', path: ['observe'], summary: 'Read-only structural observation of one operation; writes a private diagnostic bundle and a sanitized contract-diff proposal.',
-    description: 'Never logs in, never submits, never downloads. Captures only page states, control roles/names/counts, frame names, sanitized routes, readiness markers and value-stripped aria snapshots.',
-    effect: 'read', auth: 'session', browser: 'headed', profile: 'required',
+    description: 'Never logs in, never submits, never downloads. auth.login observes only the public form in a fresh profile without keyring/session access and may reject optional cookies. Other operations require a saved authenticated session. Captures only allowlisted structure and readiness.',
+    effect: 'read', auth: 'public', browser: 'headed', profile: 'required',
     positionals: [{ name: 'operation', kind: 'enum', values: OBSERVABLE, required: true, description: 'Operation whose contract states are observed.' }],
     options: [{ name: 'business-id', kind: 'string', description: 'Business to open for accounts/cartolas states (default: first discovered).', discoverWith: 'portales bci-pyme businesses list --profile <profile>' }],
     output: { description: '{ bundle, facts, hypotheses, proposedDiff, stoppedBefore }' },
@@ -39,12 +39,19 @@ export const bci_pyme_observeCommands: Spec[] = [
       const operation = input.positionals.operation as typeof OBSERVABLE[number];
       const profile = input.profile as string;
       context.stage('session-check');
-      const portal = await context.deps.openSessionPortal(profile);
+      const portal = operation === 'auth.login' ? undefined : await context.deps.openSessionPortal(profile);
       try {
-        if (!canObserve(portal)) throw new PortalError('UNSUPPORTED_CAPABILITY', 'This portal adapter does not support observation mode.');
-        await portal.requireAuthenticatedSession();
-        context.stage('navigate');
-        const observed = await portal.observe(operation, input.options['business-id'] === undefined ? {} : { businessId: input.options['business-id'] as string });
+        const observed = await (async () => {
+          if (operation === 'auth.login') {
+            if (context.deps.observeBciLogin === undefined) throw new PortalError('UNSUPPORTED_CAPABILITY', 'Public login observation is unavailable.');
+            context.stage('navigate');
+            return context.deps.observeBciLogin();
+          }
+          if (!canObserve(portal)) throw new PortalError('UNSUPPORTED_CAPABILITY', 'This portal adapter does not support observation mode.');
+          await portal.requireAuthenticatedSession();
+          context.stage('navigate');
+          return portal.observe(operation, input.options['business-id'] === undefined ? {} : { businessId: input.options['business-id'] as string });
+        })();
         context.stage('parse');
         const loaded = await loadContract(repositoryRoot(), 'bci-pyme', operation);
         const observation: Observation = {
@@ -67,9 +74,9 @@ export const bci_pyme_observeCommands: Spec[] = [
         const proposal = proposeContractDiff(context.runId, loaded, observation);
         context.stage('verify');
         const bundle = await writeObservationBundle(observation, proposal, context.deps.stateRoot ?? stateRoot(context.env));
-        return { bundle, contractPath: proposal.contractPath, facts: proposal.facts, hypotheses: proposal.hypotheses, proposedDiff: proposal.proposedDiff, stoppedBefore: observation.stoppedBefore, states: observation.states.map((state) => ({ expectedState: state.expectedState, kind: state.classification.kind, diff: state.classification.diff })) };
+        return { bundle, contractPath: proposal.contractPath, facts: proposal.facts, hypotheses: proposal.hypotheses, proposedDiff: proposal.proposedDiff, stoppedBefore: observation.stoppedBefore, ...('optionalCookiesRejected' in observed ? { optionalCookiesRejected: observed.optionalCookiesRejected } : {}), ...('navigationTimedOut' in observed && 'documentReadyState' in observed ? { navigationTimedOut: observed.navigationTimedOut, documentReadyState: observed.documentReadyState } : {}), states: observation.states.map((state) => ({ expectedState: state.expectedState, kind: state.classification.kind, diff: state.classification.diff })) };
       } finally {
-        await portal.close?.();
+        await portal?.close?.();
       }
     },
   },
