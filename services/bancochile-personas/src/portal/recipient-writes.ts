@@ -1,16 +1,17 @@
 import type { Locator, Page, Request, Response } from 'playwright';
 import { PortalError } from '../../../../packages/runtime/src/errors.js';
 import { appUrl } from './session.js';
+import { afterSubmission } from './write-outcome.js';
 
 const CONTRACT = 'services/bancochile-personas/docs/contracts/destinatarios-escritura.md';
 
 export interface AccountTarget { accountNumber: string; bank: string }
 
 const ambiguous = (message: string) => new PortalError('REMOTE_STATE_AMBIGUOUS', message, {
-  recovery: { stage: 'verify', contractRef: CONTRACT, remoteMutationPossible: true, nextCommand: 'portales bancochile-personas destinatarios list --profile <profile>' },
+  recovery: { stage: 'verify', contractRef: CONTRACT, writeOutcome: 'may-have-applied', nextCommand: 'portales bancochile-personas destinatarios list --profile <profile>' },
 });
 const changed = (message: string) => new PortalError('CONTRACT_MISMATCH', `Contract mismatch: ${message} Nothing was submitted.`, {
-  recovery: { stage: 'navigate', contractRef: CONTRACT, remoteMutationPossible: false },
+  recovery: { stage: 'navigate', contractRef: CONTRACT, writeOutcome: 'not-sent' },
 });
 
 async function exactlyOne(locator: Locator, description: string): Promise<Locator> {
@@ -46,9 +47,13 @@ export async function toggleFavorite(page: Page, target: AccountTarget): Promise
   const row = await agendaRow(page, target);
   const star = await exactlyOne(row.locator('i.icon-ion-android-star.clickable'), 'favourite star in the row');
   const response = page.waitForResponse((reply) => reply.request().method() === 'POST' && new URL(reply.url()).pathname.endsWith('/bff-pper-srv-tnsf-agenda/agenda/favorito'), { timeout: 30_000 });
-  await star.click();
-  const reply = await response.catch(() => { throw ambiguous('The favourite request was clicked but no answer was observed.'); });
-  if (reply.status() !== 200) throw ambiguous(`The favourite request answered HTTP ${String(reply.status())}.`);
+  try {
+    await star.click();
+    const reply = await response.catch(() => { throw ambiguous('The favourite request was clicked but no answer was observed.'); });
+    if (reply.status() !== 200) throw ambiguous(`The favourite request answered HTTP ${String(reply.status())}.`);
+  } catch (error: unknown) {
+    throw afterSubmission(error, ambiguous);
+  }
 }
 
 /** Opens the "Editar destinatario" panel from the agenda row of one of the recipient's accounts and
@@ -92,9 +97,13 @@ export async function deleteAccount(page: Page, target: AccountTarget): Promise<
   // Click the inner <button>: a click on the bch-button host is not handled (observed 2026-10-30).
   const yes = await exactlyOne(question.locator('bch-button[text="SI"]').locator('button'), 'SI button');
   const response = page.waitForResponse((reply) => reply.request().method() === 'DELETE' && new URL(reply.url()).pathname.endsWith('/bff-pper-srv-tnsf-agenda/agenda/elimina'), { timeout: 30_000 });
-  await yes.click();
-  const deleted = await response.catch(() => { throw ambiguous('SI was clicked but no delete answer was observed.'); });
-  if (deleted.status() !== 200) throw ambiguous(`The delete request answered HTTP ${String(deleted.status())}.`);
+  try {
+    await yes.click();
+    const deleted = await response.catch(() => { throw ambiguous('SI was clicked but no delete answer was observed.'); });
+    if (deleted.status() !== 200) throw ambiguous(`The delete request answered HTTP ${String(deleted.status())}.`);
+  } catch (error: unknown) {
+    throw afterSubmission(error, ambiguous);
+  }
   await panel.locator('button').filter({ hasText: /^\s*CANCELAR\s*$/u }).first().click().catch(() => undefined);
 }
 
@@ -134,8 +143,9 @@ export async function editRecipient(page: Page, edit: RecipientEdit, progress: E
     if (edit.name !== undefined) {
       const name = await exactlyOne(panel.locator('input[formcontrolname="nombreBeneficiario"]').filter({ visible: true }), 'recipient name field');
       const seen = answers.length;
-      await name.fill(edit.name);
+      // The name field saves itself about 2 s after typing, so the edit counts as sent from here.
       submitted = true;
+      await name.fill(edit.name);
       const status = await nextAnswer(seen, 20_000);
       if (status !== 200 && status !== 401) throw ambiguous(`The name edit answered HTTP ${String(status)}.`);
     }
@@ -156,12 +166,12 @@ export async function editRecipient(page: Page, edit: RecipientEdit, progress: E
       const save = await exactlyOne(form.locator('bch-button[text="Guardar cuenta"]').locator('button'), 'Guardar cuenta button of the account');
       const seen = answers.length;
       const before = sent;
+      submitted = true;
       await save.click();
       // The first click may only run the async account-type check (GET tipocuenta/valida) and send
       // nothing; a second click is made only when no edit request left (observed 2026-10-30).
       for (let wait = 0; wait < 12 && sent === before; wait += 1) await page.waitForTimeout(250);
       if (sent === before && await expanded()) await save.click();
-      submitted = true;
       const status = await nextAnswer(seen, 30_000);
       if (status !== 200 && status !== 401) throw ambiguous(`The account edit answered HTTP ${String(status)}.`);
     }
@@ -169,7 +179,7 @@ export async function editRecipient(page: Page, edit: RecipientEdit, progress: E
     await page.waitForTimeout(1_500);
     const declined = panel.getByText(/hemos declinado su operaci[oó]n/u);
     if (await declined.count() > 0) {
-      throw new PortalError('AUTHORIZATION_DENIED', 'The bank declined the edit for security reasons before Mi Pass.', { recovery: { stage: 'verify', contractRef: CONTRACT, remoteMutationPossible: false } });
+      throw new PortalError('AUTHORIZATION_DENIED', 'The bank declined the edit for security reasons before Mi Pass.', { recovery: { stage: 'verify', contractRef: CONTRACT, writeOutcome: 'rejected' } });
     }
     const authorize = await exactlyOne(panel.locator('label.mi-pass-box').filter({ hasText: /AUTORIZA CON MI PASS/iu }).filter({ visible: true }), 'AUTORIZA CON MI PASS control');
     const seen = answers.length;
@@ -185,7 +195,7 @@ export async function editRecipient(page: Page, edit: RecipientEdit, progress: E
     if (submitted && error instanceof PortalError && error.code === 'CONTRACT_MISMATCH') {
       throw ambiguous(`Stopped after part of the edit was sent: ${error.message.replace(/ Nothing was submitted\.$/u, '')}`);
     }
-    throw error;
+    throw submitted ? afterSubmission(error, ambiguous) : error;
   } finally {
     page.off('response', listener);
     page.off('request', counter);

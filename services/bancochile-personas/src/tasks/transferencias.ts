@@ -1,4 +1,6 @@
 import { createHash } from 'node:crypto';
+import { readFile, stat } from 'node:fs/promises';
+import { join } from 'node:path';
 import { PortalError, invalidInput } from '../../../../packages/runtime/src/errors.js';
 import { requireSafeProfile } from '../../../../packages/runtime/src/login-breaker.js';
 import type { OwnAccount } from '../portal/accounts.js';
@@ -30,6 +32,50 @@ export function validateTransfer(input: { recipientId?: unknown; accountId?: unk
     throw invalidInput('--recipient-id and --account-id are required.', [{ field: '--account-id', expected: 'account ID', discoverWith: 'portales bancochile-personas destinatarios show --profile <profile> --name <words>' }]);
   }
   return { recipientId: input.recipientId, accountId: input.accountId, amount, message };
+}
+
+/** Private, owner-set cap outside the repository: `{"version":1,"maxTransferAmount":<CLP>}`. */
+export function transferLimitPath(configRoot: string): string {
+  return join(configRoot, 'portales', 'bancochile-personas.json');
+}
+
+/** Reads the owner's per-transfer cap. Fails closed: without a readable cap that only its owner can
+ *  change, no transfer is prepared or created. The bank's Mi Pass decision is risk-based and made
+ *  after CONFIRMAR, so this local cap is the only limit known before money can move. */
+export async function readTransferLimit(configRoot: string): Promise<number> {
+  const path = transferLimitPath(configRoot);
+  const missing = () => invalidInput(`Transfers need a per-transfer cap in ${path}.`, [{ field: 'maxTransferAmount', expected: `{"version":1,"maxTransferAmount":<whole CLP>} in ${path}, mode 0600` }], {
+    nextAction: `The account owner creates ${path} with mode 0600; agents never raise it.`,
+  });
+  let text: string;
+  try {
+    if (((await stat(path)).mode & 0o022) !== 0) throw missing();
+    text = await readFile(path, 'utf8');
+  } catch (error: unknown) {
+    if (error instanceof PortalError) throw error;
+    throw missing();
+  }
+  let parsed: unknown;
+  try { parsed = JSON.parse(text); } catch { throw missing(); }
+  const item = parsed as { version?: unknown; maxTransferAmount?: unknown } | null;
+  if (item?.version !== 1 || typeof item.maxTransferAmount !== 'number' || !Number.isSafeInteger(item.maxTransferAmount) || item.maxTransferAmount < 1) throw missing();
+  return item.maxTransferAmount;
+}
+
+/** Local check before any browser: reads the cap and refuses an order above it. Returns the cap,
+ *  which prepare and create enforce again. */
+export async function checkTransferLimit(order: TransferInput, configRoot: string): Promise<number> {
+  const maxAmount = await readTransferLimit(configRoot);
+  requireWithinLimit(order, maxAmount);
+  return maxAmount;
+}
+
+function requireWithinLimit(order: TransferInput, maxAmount: number): void {
+  if (order.amount > maxAmount) {
+    throw invalidInput(`The amount exceeds the configured per-transfer cap of ${String(maxAmount)} CLP.`, [{ field: '--amount', expected: `≤ ${String(maxAmount)}` }], {
+      nextAction: 'Do not split the transfer to fit the cap; ask the account owner. Agents never raise the cap.',
+    });
+  }
 }
 
 const mask = (value: string) => `••••${value.slice(-4)}`;
@@ -66,8 +112,9 @@ function preview(order: TransferInput, recipient: Recipient, account: RecipientA
 }
 
 /** Changes nothing: checks the order against the live agenda and balance and returns the preview. */
-export async function prepareTransfer(input: { profile: string; order: TransferInput }, portal: TransferPortal) {
+export async function prepareTransfer(input: { profile: string; order: TransferInput; maxAmount: number }, portal: TransferPortal) {
   requireSafeProfile(input.profile);
+  requireWithinLimit(input.order, input.maxAmount);
   const { recipient, account, origin } = await resolve(input, portal);
   const code = confirmation(input.profile, input.order, account, origin);
   const message = input.order.message === '' ? '' : ` --message '${input.order.message.replace(/'/gu, "'\\''")}'`;
@@ -85,8 +132,9 @@ export function newDebit(before: Set<string>, after: Movement[], amount: number)
 }
 
 /** Executes one prepared transfer once and verifies the debit in the origin's movements. */
-export async function createTransfer(input: { profile: string; order: TransferInput; confirm: string; progress?: TransferProgress }, portal: TransferPortal) {
+export async function createTransfer(input: { profile: string; order: TransferInput; maxAmount: number; confirm: string; progress?: TransferProgress }, portal: TransferPortal) {
   requireSafeProfile(input.profile);
+  requireWithinLimit(input.order, input.maxAmount);
   const { recipient, account, origin } = await resolve(input, portal);
   if (confirmation(input.profile, input.order, account, origin) !== input.confirm) {
     throw new PortalError('CONFIRMATION_REQUIRED', 'The confirmation does not match this transfer or the destination changed since prepare. Prepare again.', {
@@ -97,12 +145,19 @@ export async function createTransfer(input: { profile: string; order: TransferIn
   const { miPass } = await portal.transfer({
     originNumber: origin.number, accountNumber: account.accountNumber, bank: account.bank, amount: input.order.amount, message: input.order.message,
   }, input.progress ?? (() => undefined));
-  const debit = newDebit(before, (await portal.listMovements(origin.number, null)).movements, input.order.amount);
+  const reconcile = `portales bancochile-personas movimientos list --profile ${input.profile} --account ${origin.number}`;
+  // The bank already answered the transfer: a failing verification read must not report not-sent.
+  const after = await portal.listMovements(origin.number, null).catch((error: unknown) => {
+    throw new PortalError('REMOTE_STATE_AMBIGUOUS', 'The bank answered the transfer, but the movements could not be read to verify it. Inspect the movements before anything else; never repeat the transfer.', {
+      recovery: { stage: 'verify', writeOutcome: 'may-have-applied', nextCommand: reconcile }, cause: error,
+    });
+  });
+  const debit = newDebit(before, after.movements, input.order.amount);
   if (typeof debit === 'string') {
     throw new PortalError('REMOTE_STATE_AMBIGUOUS', debit === 'none'
       ? 'The bank confirmed the transfer, but no matching debit appears in the movements yet. Inspect the movements before anything else; never repeat the transfer.'
       : 'Several new debits of this amount appear in the movements. Inspect them before anything else; never repeat the transfer.', {
-      recovery: { stage: 'verify', remoteMutationPossible: true, nextCommand: `portales bancochile-personas movimientos list --profile ${input.profile} --account ${origin.number}` },
+      recovery: { stage: 'verify', writeOutcome: 'may-have-applied', nextCommand: reconcile },
     });
   }
   return { outcome: 'transferred' as const, miPass, preview: preview(input.order, recipient, account, origin), debit };

@@ -59,3 +59,16 @@ requested destination account and amount, clicks it once, clicks the Mi Pass con
 debit of the amount appears in the movements. A rejection before Mi Pass or an expired challenge
 reports that nothing was transferred; anything uncertain is `REMOTE_STATE_AMBIGUOUS`. Only the
 current account as origin and immediate transfers are supported.
+
+## Write outcome (2026-11-24)
+
+Every `transferencias create` error carries `writeOutcome`:
+
+- `not-sent`: a check before `CONFIRMAR` stopped (confirmation, agenda, balance, form or summary).
+- `rejected`: the bank refused the order before Mi Pass with the observed 4xx
+  `{ codigo, mensaje }` envelope, or the Mi Pass challenge expired. The contract above records
+  no debit for either case. Any other status after `CONFIRMAR` is `may-have-applied`.
+- `may-have-applied`: anything after `CONFIRMAR` without a recognized outcome, including a 400
+  after Mi Pass approval, a missing Mi Pass control, a closed page, or a failed verification read.
+  Reconcile with `movimientos list` and never repeat the transfer.
+

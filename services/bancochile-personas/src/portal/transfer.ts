@@ -1,6 +1,7 @@
 import type { Locator, Page, Response } from 'playwright';
 import { PortalError } from '../../../../packages/runtime/src/errors.js';
 import { appUrl } from './session.js';
+import { afterSubmission } from './write-outcome.js';
 
 const CONTRACT = 'services/bancochile-personas/docs/contracts/transferencias.md';
 const orchestrator = '/nueva-tef-rest/nueva-tef/ofd/orquestadorTefEncrypted/nivel1';
@@ -27,10 +28,10 @@ export function summaryShowsAccount(summary: string, accountNumber: string): boo
 }
 
 const changed = (message: string) => new PortalError('CONTRACT_MISMATCH', `Contract mismatch: ${message} Nothing was submitted.`, {
-  recovery: { stage: 'navigate', contractRef: CONTRACT, remoteMutationPossible: false },
+  recovery: { stage: 'navigate', contractRef: CONTRACT, writeOutcome: 'not-sent' },
 });
 const ambiguous = (message: string) => new PortalError('REMOTE_STATE_AMBIGUOUS', message, {
-  recovery: { stage: 'verify', contractRef: CONTRACT, remoteMutationPossible: true, nextCommand: 'portales bancochile-personas movimientos list --profile <profile> --account <origin>' },
+  recovery: { stage: 'verify', contractRef: CONTRACT, writeOutcome: 'may-have-applied', nextCommand: 'portales bancochile-personas movimientos list --profile <profile> --account <origin>' },
 });
 
 async function exactlyOne(locator: Locator, description: string): Promise<Locator> {
@@ -43,6 +44,13 @@ async function exactlyOne(locator: Locator, description: string): Promise<Locato
 async function bankMessage(reply: Response): Promise<string> {
   const body = await reply.json().catch(() => null) as { mensaje?: unknown } | null;
   return typeof body?.mensaje === 'string' ? body.mensaje.slice(0, 200) : 'no message';
+}
+
+/** Only the observed refusal envelope, a 4xx `{ codigo, mensaje, … }`, proves the bank kept nothing. */
+async function isBankRefusal(reply: Response): Promise<boolean> {
+  if (reply.status() < 400 || reply.status() >= 500) return false;
+  const body = await reply.json().catch(() => null) as { codigo?: unknown; mensaje?: unknown } | null;
+  return body !== null && body.codigo !== undefined && typeof body.mensaje === 'string';
 }
 
 /** Fills the third-party transfer form, checks the bank's own summary against the order, clicks
@@ -80,6 +88,8 @@ export async function transfer(page: Page, order: TransferOrder, progress: Trans
   const listener = (reply: Response) => {
     if (reply.request().method() === 'POST' && new URL(reply.url()).pathname.endsWith(orchestrator)) answers.push(reply);
   };
+  const confirm = await exactlyOne(page.locator('button').filter({ hasText: /^\s*CONFIRMAR\s*$/u }).filter({ visible: true }), 'CONFIRMAR button');
+  let clicked = false;
   page.on('response', listener);
   try {
     const next = async (seen: number, timeout: number): Promise<Response | undefined> => {
@@ -87,22 +97,30 @@ export async function transfer(page: Page, order: TransferOrder, progress: Trans
       while (answers.length <= seen && Date.now() < deadline) {
         if (await page.getByText(/El env[ií]o de Mi Pass no ha sido posible/u).count() > 0) {
           throw new PortalError('ADDITIONAL_AUTH_REQUIRED', 'Mi Pass was not approved before the challenge expired. Nothing was transferred.', {
-            recovery: { stage: 'verify', contractRef: CONTRACT, remoteMutationPossible: false },
+            recovery: { stage: 'verify', contractRef: CONTRACT, writeOutcome: 'rejected' },
           });
         }
         await page.waitForTimeout(500);
       }
       return answers[seen];
     };
-    await (await exactlyOne(page.locator('button').filter({ hasText: /^\s*CONFIRMAR\s*$/u }).filter({ visible: true }), 'CONFIRMAR button')).click();
+    clicked = true;
+    await confirm.click();
     const first = await next(0, 30_000);
     if (first === undefined) throw ambiguous('CONFIRMAR was clicked but the bank did not answer.');
     if (first.status() === 200) return { miPass: false };
     if (first.status() !== 401) {
-      throw new PortalError('PROVIDER_ERROR', `The bank rejected the transfer: ${await bankMessage(first)}`, { recovery: { stage: 'verify', contractRef: CONTRACT, remoteMutationPossible: false } });
+      if (await isBankRefusal(first)) {
+        throw new PortalError('PROVIDER_ERROR', `The bank rejected the transfer: ${await bankMessage(first)}`, { recovery: { stage: 'verify', contractRef: CONTRACT, writeOutcome: 'rejected' } });
+      }
+      throw ambiguous(`CONFIRMAR answered HTTP ${String(first.status())} without the bank's refusal envelope.`);
     }
     const authorize = await exactlyOne(page.locator('label.mi-pass-box').filter({ hasText: /AUTORIZA CON MI PASS/iu }).filter({ visible: true }), 'AUTORIZA CON MI PASS control')
-      .catch(() => { throw new PortalError('AUTHORIZATION_DENIED', 'The bank did not offer Mi Pass for this transfer. Nothing was transferred.', { recovery: { stage: 'verify', contractRef: CONTRACT, remoteMutationPossible: false } }); });
+      .catch(() => {
+        throw new PortalError('CONTRACT_MISMATCH', 'Contract mismatch: the bank asked for Mi Pass but the AUTORIZA CON MI PASS control did not appear. Inspect the movements before anything else.', {
+          recovery: { stage: 'verify', contractRef: CONTRACT, writeOutcome: 'may-have-applied', nextCommand: 'portales bancochile-personas movimientos list --profile <profile> --account <origin>' },
+        });
+      });
     await authorize.click();
     progress('awaiting-mipass');
     const approved = await next(1, APPROVAL_WAIT_MS);
@@ -110,8 +128,10 @@ export async function transfer(page: Page, order: TransferOrder, progress: Trans
     if (approved === undefined) throw ambiguous('Mi Pass was requested but no approved transfer was observed in time.');
     if (approved.status() === 200) return { miPass: true };
     throw new PortalError('PROVIDER_ERROR', `The bank rejected the approved transfer: ${await bankMessage(approved)}`, {
-      recovery: { stage: 'verify', contractRef: CONTRACT, remoteMutationPossible: true, nextCommand: 'portales bancochile-personas movimientos list --profile <profile> --account <origin>' },
+      recovery: { stage: 'verify', contractRef: CONTRACT, writeOutcome: 'may-have-applied', nextCommand: 'portales bancochile-personas movimientos list --profile <profile> --account <origin>' },
     });
+  } catch (error: unknown) {
+    throw clicked ? afterSubmission(error, ambiguous) : error;
   } finally {
     page.off('response', listener);
   }

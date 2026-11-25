@@ -1,10 +1,10 @@
 import { PortalError, invalidInput } from '../../../../packages/runtime/src/errors.js';
 import type { CommandSpec, ServiceSpec } from '../../../../packages/runtime/src/registry.js';
-import { stateRoot as defaultStateRoot, dataRoot as defaultDataRoot } from '../../../../packages/runtime/src/paths.js';
+import { stateRoot as defaultStateRoot, dataRoot as defaultDataRoot, configRoot as defaultConfigRoot } from '../../../../packages/runtime/src/paths.js';
 import type { CliDependencies } from '../dependencies.js';
 import { breakerStatus, logout, status } from '../../../../services/bancochile-personas/src/tasks/auth.js';
 import { listCuentas, listMovimientos, movementRange, type AccountsPortal } from '../../../../services/bancochile-personas/src/tasks/cuentas.js';
-import { createTransfer, prepareTransfer, validateTransfer, type TransferPortal } from '../../../../services/bancochile-personas/src/tasks/transferencias.js';
+import { checkTransferLimit, createTransfer, prepareTransfer, validateTransfer, type TransferPortal } from '../../../../services/bancochile-personas/src/tasks/transferencias.js';
 import { executeRecipientWrite, prepareRecipientWrite, type RecipientWrite, type RecipientWritePortal } from '../../../../services/bancochile-personas/src/tasks/destinatarios-write.js';
 import { listDestinatarios, showDestinatario, type RecipientQuery, type RecipientsPortal } from '../../../../services/bancochile-personas/src/tasks/destinatarios.js';
 
@@ -79,6 +79,16 @@ function recipientWrite(action: RecipientWrite['action'], options: Record<string
 }
 
 const commands: Spec[] = [
+  {
+    service: 'bancochile-personas', path: ['auth', 'setup'], summary: 'Store Banco de Chile credentials in the OS keyring through hidden terminal prompts.',
+    effect: 'write', auth: 'interactive', browser: 'none', profile: 'required',
+    output: { description: '{ configured: true, profile }' }, errors: ['INVALID_INPUT', 'KEYRING_UNAVAILABLE', 'CREDENTIALS_INVALID'],
+    contractRef: `${SERVICE_DOC}#keyring-namespace`,
+    async run(input, context) {
+      if (context.deps.setupBancoChilePersonas === undefined) throw new PortalError('KEYRING_UNAVAILABLE', 'Interactive credential setup is unavailable.');
+      return context.deps.setupBancoChilePersonas({ profile: input.profile as string });
+    },
+  },
   {
     service: 'bancochile-personas', path: ['auth', 'login'], summary: 'Make exactly one explicit Banco de Chile login attempt with the stored credentials.',
     effect: 'read', auth: 'public', browser: 'headed', profile: 'required',
@@ -216,8 +226,8 @@ const commands: Spec[] = [
       ? 'Preview an immediate transfer to an agenda recipient account and return its confirmation. Moves no money.'
       : 'Make one immediate transfer to an agenda recipient account, after confirmation and Mi Pass, and verify the debit.',
     description: step === 'prepare'
-      ? 'Checks the recipient account in the live agenda and the amount against the current account\'s available balance.'
-      : 'Run transferencias prepare first and pass its confirmation. When the bank asks for Mi Pass, STDERR reports awaiting-mipass: open the Mi Pass app and approve within about three minutes, without stopping the command. Success requires a new debit of the amount in the movements. Never retried; on any doubt, inspect movimientos list before anything else.',
+      ? 'Checks the amount against the owner\'s per-transfer cap (private bancochile-personas.json, see service.md), then the recipient account in the live agenda and the current account\'s available balance.'
+      : 'Run transferencias prepare first and pass its confirmation. The owner\'s per-transfer cap is checked again before the browser opens. When the bank asks for Mi Pass, STDERR reports awaiting-mipass: open the Mi Pass app and approve within about three minutes, without stopping the command. Success requires a new debit of the amount in the movements. Never retried; on any doubt, inspect movimientos list before anything else.',
     effect: step === 'prepare' ? 'read' : 'destructive', auth: 'session', browser: 'headed', profile: 'required',
     options: [
       { name: 'recipient-id', kind: 'string', required: true, description: 'Recipient ID.', discoverWith: 'portales bancochile-personas destinatarios show --profile <profile> --name <words>' },
@@ -230,10 +240,11 @@ const commands: Spec[] = [
     errors: ['INVALID_INPUT', 'CONFIRMATION_REQUIRED', 'ADDITIONAL_AUTH_REQUIRED', 'AUTHORIZATION_DENIED', 'REMOTE_STATE_AMBIGUOUS', ...sessionErrors],
     contractRef: TRANSFERS_CONTRACT, contractVersion: '2026-10-31',
     discoverWith: ['portales bancochile-personas destinatarios show --profile <profile> --name <words>'],
-    run: (input, context) => {
+    async run(input, context) {
       const order = validateTransfer({ recipientId: input.options['recipient-id'], accountId: input.options['account-id'], amount: input.options.amount, message: input.options.message });
       const profile = input.profile as string;
-      if (step === 'prepare') return withPortal(context, profile, (portal) => prepareTransfer({ profile, order }, portal));
+      const maxAmount = await checkTransferLimit(order, defaultConfigRoot(context.env));
+      if (step === 'prepare') return withPortal(context, profile, (portal) => prepareTransfer({ profile, order, maxAmount }, portal));
       if (typeof input.options.confirm !== 'string') {
         throw new PortalError('CONFIRMATION_REQUIRED', 'Run transferencias prepare and pass its --confirm.', {
           recovery: { nextCommand: `portales bancochile-personas transferencias prepare --profile ${profile} --recipient-id ${order.recipientId} --account-id ${order.accountId} --amount ${String(order.amount)}` },
@@ -243,7 +254,7 @@ const commands: Spec[] = [
       const progress = (stage: 'awaiting-mipass' | 'verifying-mipass') => {
         context.stderr(JSON.stringify({ schemaVersion: '1', runId: context.runId, service: 'bancochile-personas', operation: 'transferencias.create', stage: 'verify', detail: stage }));
       };
-      return withPortal(context, profile, (portal) => createTransfer({ profile, order, confirm, progress }, portal));
+      return withPortal(context, profile, (portal) => createTransfer({ profile, order, maxAmount, confirm, progress }, portal));
     },
   })),
 ];

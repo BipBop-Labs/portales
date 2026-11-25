@@ -25,9 +25,17 @@ share it only if the bank proves the same credentials apply. Treat it as a stabl
 contract. The secret is opaque versioned JSON owned by this adapter. Version 1 has exactly
 `version` (the integer `1`), `rut` (a valid RUT, dots and dash optional) and `password`.
 
-There is no interactive `auth setup` yet. Any Secret Service writer may store the bundle under
-the exact attributes; values never appear in arguments, environment variables of the CLI, files,
-logs, or this repository.
+Store or replace it in an interactive terminal:
+
+```text
+portales bancochile-personas auth setup --profile default
+```
+
+Both fields are read with echo disabled, validated locally (the RUT check digit included), and
+stored only after typing `guardar`. Setup never authenticates and never resets the breaker.
+Arguments, environment variables, files and redirected stdin cannot supply credentials. Setup
+and login use `secret-tool` (Linux Secret Service). There is no macOS Keychain backend; on a
+Mac without `secret-tool` neither can store or read credentials.
 
 ## Login
 
@@ -115,6 +123,19 @@ portales bancochile-personas transferencias create --profile default --recipient
 Immediate transfers from the current account to an agenda recipient account. Approve Mi Pass in the
 app within about three minutes. Success is verified as a new debit in the movements; never repeat a
 transfer after an error before checking `movimientos list`.
+
+### Per-transfer cap
+
+Both commands refuse to run, before any browser opens, unless the account owner has set a cap in
+`$XDG_CONFIG_HOME/portales/bancochile-personas.json` (mode `0600`, never in a repository):
+
+```json
+{ "version": 1, "maxTransferAmount": 50000 }
+```
+
+A missing, unreadable, malformed, or group/other-writable file returns `INVALID_INPUT`, and so
+does an amount above the cap. Agents never create, raise, or work around the cap, and never split a
+transfer to fit it. See [the decision](../../../docs/decisions/2026-11-25-transfer-cap.md).
 
 ## Data handling
 

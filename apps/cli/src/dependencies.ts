@@ -9,6 +9,7 @@ export interface CliDependencies {
   setup?: (input: { profile: string }) => Promise<unknown>;
   observeBciLogin?: () => Promise<PublicLoginObservation>;
   login(input: { profile: string }): Promise<unknown>;
+  setupBancoChilePersonas?: (input: { profile: string }) => Promise<unknown>;
   loginBancoChilePersonas?: (input: { profile: string }) => Promise<unknown>;
   openBancoChilePortal?: (profile: string) => Promise<import('../../../services/bancochile-personas/src/tasks/destinatarios.js').RecipientsPortal & import('../../../services/bancochile-personas/src/tasks/cuentas.js').AccountsPortal & import('../../../services/bancochile-personas/src/tasks/destinatarios-write.js').RecipientWritePortal & import('../../../services/bancochile-personas/src/tasks/transferencias.js').TransferPortal & { close(): Promise<void> }>;
   loginSii?: (input: { profile: string }) => Promise<unknown>;

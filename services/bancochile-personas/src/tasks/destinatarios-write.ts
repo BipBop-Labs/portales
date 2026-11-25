@@ -113,7 +113,14 @@ export async function executeRecipientWrite(input: { profile: string; write: Rec
     };
     miPass = (await portal.editRecipient(edit, input.progress ?? (() => undefined))).miPass;
   }
-  const after = (await portal.listRecipients()).find((item) => item.id === recipient.id);
+  const reconcile = `portales bancochile-personas destinatarios show --profile ${input.profile} --id ${recipient.id}`;
+  // The write was already sent: a failing verification read must not report not-sent.
+  const recipients = await portal.listRecipients().catch((error: unknown) => {
+    throw new PortalError('REMOTE_STATE_AMBIGUOUS', 'The change was sent, but the agenda could not be read to verify it. Inspect destinatarios show before anything else.', {
+      recovery: { stage: 'verify', writeOutcome: 'may-have-applied', nextCommand: reconcile }, cause: error,
+    });
+  });
+  const after = recipients.find((item) => item.id === recipient.id);
   const live = (id: string) => after?.accounts.find((item) => item.accountId === id);
   let done: boolean;
   if (write.action === 'favorite') done = live(account.accountId)?.favorite === write.favorite;
@@ -126,7 +133,7 @@ export async function executeRecipientWrite(input: { profile: string; write: Rec
   }
   if (!done) {
     throw new PortalError('REMOTE_STATE_AMBIGUOUS', 'The portal answered, but the agenda does not show the expected result. Inspect destinatarios show before anything else.', {
-      recovery: { stage: 'verify', remoteMutationPossible: true, nextCommand: `portales bancochile-personas destinatarios show --profile ${input.profile} --id ${recipient.id}` },
+      recovery: { stage: 'verify', writeOutcome: 'may-have-applied', nextCommand: reconcile },
     });
   }
   const outcome = write.action === 'delete-account' ? 'deleted' as const : 'updated' as const;

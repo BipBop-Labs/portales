@@ -2,6 +2,7 @@ import { PortalError } from '../../../../packages/runtime/src/errors.js';
 import { loginOnce, type OneShotLoginPortal } from '../../../../packages/runtime/src/one-shot-login.js';
 import { requireSafeProfile } from '../../../../packages/runtime/src/login-breaker.js';
 import { isValidRut } from '../../../../packages/runtime/src/rut.js';
+import { readHidden, requireInteractiveTerminal, storeSecret } from '../../../../packages/runtime/src/secret-setup.js';
 import type { SecretReader } from '../../../../packages/runtime/src/secret-service.js';
 import { readSessionStatus, removeSessionState } from '../../../../packages/runtime/src/session-status.js';
 import { authState, KEYRING_SERVICE, loginBreaker, privatePaths } from '../auth/state.js';
@@ -22,6 +23,30 @@ export function parseCredentials(value: string): Credentials {
     throw new PortalError('CREDENTIALS_INVALID', 'The configured credentials are invalid.');
   }
   return { rut: item.rut, password: item.password };
+}
+
+/** Interactive enrollment only: hidden prompts, local validation, explicit confirmation, then one
+ *  write of the exact (cl.bipbop.portales.bancochile, <profile>) item. Never authenticates. */
+export async function setup(input: { profile: string }): Promise<{ configured: true; profile: string }> {
+  requireSafeProfile(input.profile);
+  requireInteractiveTerminal();
+  let rut = '';
+  let password = '';
+  let encoded = '';
+  try {
+    rut = await readHidden('RUT Banco de Chile (entrada oculta): ');
+    password = await readHidden('Clave Banco de Chile (entrada oculta): ');
+    encoded = JSON.stringify({ version: 1, rut, password });
+    parseCredentials(encoded);
+    const confirmation = await readHidden(`Guardar o reemplazar credenciales Banco de Chile del perfil ${input.profile}: escribe guardar: `);
+    if (confirmation !== 'guardar') throw new PortalError('INVALID_INPUT', 'Credential setup was cancelled.');
+    await storeSecret({ service: KEYRING_SERVICE, account: input.profile, label: 'Portales Banco de Chile', encoded });
+    return { configured: true, profile: input.profile };
+  } finally {
+    rut = '';
+    password = '';
+    encoded = '';
+  }
 }
 
 interface Roots { stateRoot: string; dataRoot: string }

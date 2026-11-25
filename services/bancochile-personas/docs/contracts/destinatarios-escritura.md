@@ -69,3 +69,7 @@ same confirmation, acts once, waits for the portal's answer and re-reads the age
 when the account shows the new favourite state, or is gone while the recipient's other accounts
 remain. No answer, a non-200 answer or an unexpected agenda returns `REMOTE_STATE_AMBIGUOUS`;
 inspect `destinatarios show` before anything else. Nothing is retried.
+
+Errors before the submitting click or field edit carry `writeOutcome: not-sent`; the bank's
+"hemos declinado su operación" before Mi Pass is `rejected`; any other failure after a request
+left, including a failed agenda re-read, is `may-have-applied` (2026-11-24).
