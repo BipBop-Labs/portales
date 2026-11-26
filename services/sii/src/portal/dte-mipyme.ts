@@ -112,6 +112,7 @@ export interface DteBorradorInput {
   readonly ciudadEmisor: string;
   readonly receptor: DteReceptor;
   readonly items: readonly DteItem[];
+  readonly referenciaHes?: { readonly folio: string; readonly fecha: string };
   readonly formaPago: FormaPago;
   /** Set to UPDATE an existing borrador in place; omit to create a new one. */
   readonly borradorId?: string;
@@ -497,8 +498,7 @@ function fillScript(payload: unknown): string {
   put('EFXP_CONTACTO', P.receptor.contacto);
   if (P.borradorId) {
     const h = el('EHDR_CODIGO');
-    if (!h) return { scraper: 'falta EHDR_CODIGO en el formulario' };
-    h.value = P.borradorId;
+    if (!h || h.value !== P.borradorId) return { scraper: 'el SII no devolvió el borrador solicitado' };
   }
 
   for (let i = 0; i < P.items.length; i += 1) {
@@ -523,6 +523,32 @@ function fillScript(payload: unknown): string {
     put('EFXP_PRC_' + s, it.precioUnitario, true);
   }
 
+  let hesRow;
+  if (P.referenciaHes) {
+    const toggle = el('REF_SI_NO');
+    if (!toggle) return { scraper: 'falta la sección Referencias' };
+    if (!toggle.checked) toggle.click();
+    if (!(await waitFor(['EFXP_TPO_DOC_REF_001', 'EFXP_FOLIO_REF_001'], 10000))) {
+      return { scraper: 'no se dibujó la sección Referencias' };
+    }
+    const existing = Array.from(f.elements).filter(e => /^EFXP_TPO_DOC_REF_[0-9]{3}$/.test(e.name));
+    const slot = existing.find(e => e.value === 'HES' && el(e.name.replace('TPO_DOC', 'FOLIO'))?.value === P.referenciaHes.folio)
+      ?? existing.find(e => !e.value && !el(e.name.replace('TPO_DOC', 'FOLIO'))?.value);
+    if (!slot || !Array.from(slot.options).some(o => o.value === 'HES')) return { scraper: 'no hay una fila disponible para HES' };
+    hesRow = slot.name.slice(-3);
+    const shortRow = hesRow.slice(-2);
+    const [year, month, day] = P.referenciaHes.fecha.split('-');
+    const change = (e, v) => {
+      if (!e || (e.tagName === 'SELECT' && !Array.from(e.options).some(o => o.value === v))) return false;
+      e.value = v;
+      e.dispatchEvent(new Event('change', { bubbles: true }));
+      return e.value === v;
+    };
+    if (!change(slot, 'HES') || !change(el('EFXP_FOLIO_REF_' + hesRow), P.referenciaHes.folio) ||
+        !change(el('cbo_anio_boleta_ref_' + shortRow), year) || !change(el('cbo_mes_boleta_ref_' + shortRow), month) ||
+        !change(el('cbo_dia_boleta_ref_' + shortRow), day)) return { scraper: 'el formulario no aceptó la referencia HES' };
+  }
+
   const msgs = [];
   const prev = window.alert;
   window.alert = (m) => msgs.push(String(m).trim());
@@ -539,6 +565,11 @@ function fillScript(payload: unknown): string {
     if (!e.name || e.type === 'button' || e.type === 'submit') continue;
     if ((e.type === 'checkbox' || e.type === 'radio') && !e.checked) continue;
     fields[e.name] = e.value;
+  }
+  if (hesRow && (fields['EFXP_TPO_DOC_REF_' + hesRow] !== 'HES' ||
+      fields['EFXP_FOLIO_REF_' + hesRow] !== P.referenciaHes.folio ||
+      fields['EFXP_FCH_REF_' + hesRow] !== P.referenciaHes.fecha)) {
+    return { scraper: 'la referencia HES no quedó serializada en el formulario' };
   }
   return {
     ok, msgs, missing, coerced, fields,
@@ -782,6 +813,7 @@ export async function fillFactura(
         descuentoPct: it.descuentoPct ? String(it.descuentoPct) : '',
       })),
       borradorId: input.borradorId ?? '',
+      referenciaHes: input.referenciaHes,
     }),
   );
   if (r.scraper) {

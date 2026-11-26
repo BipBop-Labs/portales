@@ -140,6 +140,7 @@ export interface DteBorradorArgs {
     readonly contacto?: string;
   };
   readonly items: readonly DteItem[];
+  readonly referenciaHes?: { readonly folio: string; readonly fecha: string };
   readonly formaPago?: FormaPago; // default 'credito'
   /** Set to UPDATE an existing borrador in place; omit to create a new one. */
   readonly borradorId?: string;
@@ -241,6 +242,7 @@ function validate(
         ...(args.receptor.contacto ? { contacto: args.receptor.contacto } : {}),
       },
       items: args.items,
+      ...(args.referenciaHes ? { referenciaHes: args.referenciaHes } : {}),
       formaPago,
       ...(args.borradorId ? { borradorId: args.borradorId } : {}),
     },
