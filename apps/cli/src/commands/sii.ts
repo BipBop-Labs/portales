@@ -103,6 +103,7 @@ async function privateJson(path: string): Promise<unknown> {
 interface FacturaJson {
   empresa?: string; tipo_dte?: number; fecha_emision?: string; ciudad_emisor?: string; forma_pago?: string; borrador_id?: string;
   receptor?: Record<string, unknown>; items?: Record<string, unknown>[];
+  referencia_hes?: unknown;
 }
 
 function text(record: Record<string, unknown>, key: string): string {
@@ -118,6 +119,16 @@ function number(record: Record<string, unknown>, key: string): number {
 }
 
 function facturaArgs(document: FacturaJson, input: ParsedInput): DteBorradorArgs {
+  const hes = document.referencia_hes;
+  let referenciaHes: { folio: string; fecha: string } | undefined;
+  if (hes !== undefined) {
+    if (!hes || typeof hes !== 'object' || Array.isArray(hes)) throw invalidInput('referencia_hes debe ser un objeto.', [{ field: 'referencia_hes', expected: '{ folio, fecha }' }]);
+    const { folio, fecha } = hes as Record<string, unknown>;
+    if (typeof folio !== 'string' || !/^\d{1,18}$/.test(folio)) throw invalidInput('Folio HES inválido.', [{ field: 'referencia_hes.folio', expected: '1–18 digits as a string' }]);
+    const date = typeof fecha === 'string' ? new Date(fecha) : new Date(NaN);
+    if (typeof fecha !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(fecha) || !Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== fecha) throw invalidInput('Fecha HES inválida.', [{ field: 'referencia_hes.fecha', expected: 'valid date (YYYY-MM-DD)' }]);
+    referenciaHes = { folio, fecha };
+  }
   const receptor = document.receptor ?? {};
   const rawItems = document.items ?? [];
   if (rawItems.length === 0 || rawItems.length > MAX_ITEMS) {
@@ -142,6 +153,7 @@ function facturaArgs(document: FacturaJson, input: ParsedInput): DteBorradorArgs
   }));
   return {
     empresa,
+    ...(referenciaHes ? { referenciaHes } : {}),
     ...(document.tipo_dte !== undefined ? { tipoDte: document.tipo_dte } : {}),
     ...(fecha ? { fechaEmision: fecha } : {}),
     ciudadEmisor: ciudad,
@@ -509,6 +521,7 @@ const commands: Spec[] = [
   },
   {
     service: 'sii', path: ['dte', 'preview'], summary: 'Render a draft factura JSON as a preview PDF (stamped NOT VALID) without saving a draft.',
+    description: 'Optional invoice JSON field: referencia_hes: { folio: string, fecha: YYYY-MM-DD }. Omit the field when re-previewing a saved draft to verify persistence.',
     effect: 'read', auth: 'session', browser: 'headless', profile: 'optional',
     positionals: [{ name: 'invoice', kind: 'path', required: true, description: 'Private invoice JSON (mode 0600).' }],
     options: [{ ...empresaOption, required: false, description: 'Empresa RUT override for the JSON.' }, { name: 'ciudad', kind: 'string', description: 'Emitter city override.' }, { name: 'fecha', kind: 'date', description: 'Emission date override.' }, { name: 'borrador', kind: 'string', description: 'Existing draft id to re-preview.' }, { name: 'out', kind: 'path', description: 'Private output directory (default: profile documents directory).' }],
@@ -531,6 +544,7 @@ const commands: Spec[] = [
   },
   {
     service: 'sii', path: ['dte', 'borrador', 'save'], summary: 'Save (never emit) a draft factura from private JSON.',
+    description: 'Optional invoice JSON field: referencia_hes: { folio: string, fecha: YYYY-MM-DD }. Use --borrador to edit an existing draft.',
     effect: 'write', auth: 'session', browser: 'headless', profile: 'optional',
     positionals: [{ name: 'invoice', kind: 'path', required: true, description: 'Private invoice JSON (mode 0600).' }],
     options: [{ ...empresaOption, required: false, description: 'Empresa RUT override for the JSON.' }, { name: 'ciudad', kind: 'string', description: 'Emitter city override.' }, { name: 'fecha', kind: 'date', description: 'Emission date override.' }, { name: 'borrador', kind: 'string', description: 'Existing draft id to update in place.' }],

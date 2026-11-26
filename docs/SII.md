@@ -152,6 +152,12 @@ Invoice JSON files must be private regular files with mode `0600`. Draft deletio
 
 Use the public CLI against the real portal with the minimum calls. The maintained unit tests cover only regressions already encountered, notably the Portales keyring namespace. Do not mirror the upstream package's test suite or add fake infrastructure preemptively.
 
+### HES on factura drafts
+
+Set `"referencia_hes": { "folio": "123", "fecha": "2026-01-15" }` in the private invoice JSON for `dte preview` or `dte borrador save`. The date is the source HES date, not the invoice date. With `--borrador`, update the existing draft without signing or issuing it. To verify persistence, re-preview the same ID with the same invoice JSON **without** `referencia_hes` and confirm the `TipoDoc. HES` line in the PDF's `Referencias` section and unchanged totals.
+
+Observed 2026-11-26: `REF_SI_NO` opens the grid. `EFXP_TPO_DOC_REF_*` offers `HES` (Hoja Entrada Servicio). The date selects' native change handlers populate `EFXP_FCH_REF_*` in ISO format. The adapter rejects missing controls, missing choices, and a mismatched serialized reference before submission.
+
 Live verification 2026-09-17 (read-only, one call each, real portal): `auth status`, `auth login` (keyring, headless), `rcv summary` (compra, venta, `--empresa`), `rcv list --tipo`, `rcv all`, `bte list` (emitidas, recibidas, scope metadata present), `bte comunas`, `dte authorized`, `dte empresas`, `dte emitidos`, `dte documentos list --direction issued|received`, `dte borrador list`, `dte documentos download --direction issued --output <private dir>` and `--direction received --output <private dir>` (artifact descriptors, `artifacts verify` passed, received text checks passed). Every result carried the versioned envelope and one `runId` across STDERR stages. Not live-verified: `auth logout`, writes (`bte emit`, `borrador save/delete`, `dte preview`), and the breaker trip path (would require a deliberately failed login).
 
 Two defects were found and fixed during that verification: a missing Playwright Chromium surfaced as `INTERNAL` (now classified `BROWSER_LAUNCH_FAILED` through the shared classifier), and a cross-filesystem `--output` failed at the verify stage (the shared publish helper now copies without overwrite when hard links are impossible).

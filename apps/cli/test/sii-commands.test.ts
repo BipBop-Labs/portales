@@ -58,6 +58,16 @@ const SESSION = { rut: '20000042-0', cookies: {}, savedAt: '2026-09-17T11:00:00Z
 const SELF = { selfRut: '20000042-0', accountType: 'persona', operatingRut: '20000042-0', operable: [{ rut: '20000042-0', razonSocial: 'Synthetic', isSelf: true }] };
 
 describe('SII registry commands', () => {
+  it('rejects an invalid HES date before accessing the portal', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'portales-hes-test-'));
+    try {
+      const invoice = join(dir, 'invoice.json');
+      await writeFile(invoice, JSON.stringify({ empresa: '20000042-0', ciudad_emisor: 'Ciudad Sintética', receptor: { rut: '20000042-0', razon_social: 'Synthetic', direccion: 'Synthetic', comuna: 'Synthetic', ciudad: 'Synthetic', giro: 'Synthetic' }, items: [{ nombre: 'Synthetic', cantidad: 1, precio_unitario: 1000 }], referencia_hes: { folio: '123', fecha: '2026-02-30' } }), { mode: 0o600 });
+      const h = harness(fakeRuntime(memoryStore()));
+      expect(await runCli(['sii', 'dte', 'borrador', 'save', invoice], h.deps)).toBe(2);
+      expect(h.error()).toMatchObject({ code: 'INVALID_INPUT', validation: [{ field: 'referencia_hes.fecha' }] });
+    } finally { await rm(dir, { recursive: true, force: true }); }
+  });
   it('maps a missing session to NOT_AUTHENTICATED with the login command as nextCommand', async () => {
     const h = harness(fakeRuntime(memoryStore()));
     expect(await runCli(['sii', 'rcv', 'summary', '2026-08', '--profile', 'testing'], h.deps)).toBe(3);
