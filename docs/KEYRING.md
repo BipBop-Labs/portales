@@ -57,6 +57,7 @@ The read capability cannot create, replace, enumerate, or delete secrets. Secret
 | --- | --- | --- |
 | `bci-pyme` | `cl.bipbop.portales.bci` | `{ "version": 1, "rut", "password" }` |
 | `sii` | `cl.bipbop.portales.sii` | `{ "version": 1, "rut", "clave" }` |
+| `bancochile-personas` | `cl.bipbop.portales.bancochile` | `{ "version": 1, "rut", "password" }` |
 
 `portales doctor --json` reports whether `secret-tool` is installed and whether a Secret Service provider answers on the session bus (gnome-keyring, or KWallet with its Secret Service compatibility enabled). It never reads a bundle. `portales <service> auth status` reports local session presence and the login breaker without touching the keyring.
 
