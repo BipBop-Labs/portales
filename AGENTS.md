@@ -22,7 +22,7 @@ Help the next agent learn from this work. Preserve useful discoveries about how 
 8. `docs/OPERATIONS.md` for execution, diagnostics, and repair
 9. `docs/CODE-GUIDE.md` for the shape of a correct change, and `docs/decisions/` for why the cross-cutting rules exist
 
-For design work, use the `ousterhout-software-design` skill from [`BipBop-Labs/bipbop-skills`](https://github.com/BipBop-Labs/bipbop-skills). Prefer deep modules, information hiding, obvious interfaces, and pulling unavoidable complexity below the task boundary.
+For design work, use the `code-principles` skill from [`BipBop-Labs/bipbop-skills`](https://github.com/BipBop-Labs/bipbop-skills).
 
 ## Non-negotiable rules
 
